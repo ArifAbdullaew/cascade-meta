@@ -25,6 +25,21 @@ class SimulatorEnum(Enum):
 MAX_CYCLES_PER_INSTR = 30
 SETUP_CYCLES = 1000 # Without this, we had issues with BOOM with very short programs (typically <20 instructions) not being able to finish in time.
 
+def run_verilator_task(sim_executable_path, my_env, num_threads):
+    try:
+        print(f"Running Verilator with {num_threads} threads...")
+        result = subprocess.run(
+            [sim_executable_path, "--threads", str(num_threads), "--threads-dpi", "1"],
+            check=True, text=True, capture_output=True, env=my_env
+        )
+        return result
+    except subprocess.CalledProcessError as e:
+        print(f"Error: Verilator failed with return code {e.returncode}")
+        print("STDOUT:", e.stdout)
+        print("STDERR:", e.stderr)
+        return None  # <== Если ошибка, возвращаем None
+
+
 # @param get_rfuzz_coverage_mask if True, then return a pair (is_stop_successful: bool, rfuzz_coverage_mask: int)
 # Return a pair (is_stop_successful: bool, reg_vals: int list of length <= MAX_NUM_PICKABLE_REGS-1 or None if is_stop_successful is False)
 def runsim_verilator(design_name, simlen, elfpath, num_int_regs: int = MAX_NUM_PICKABLE_REGS-1, num_float_regs: int = MAX_NUM_PICKABLE_FLOATING_REGS, coveragepath = None, get_rfuzz_coverage_mask = False):
@@ -43,7 +58,7 @@ def runsim_verilator(design_name, simlen, elfpath, num_int_regs: int = MAX_NUM_P
     sim_executable_path  = os.path.abspath(os.path.join(builddir, simdir, verilatordir, verilator_executable))
 
     # Run Verilator
-    exec_out = subprocess.run([sim_executable_path], check=True, text=True, capture_output=True, env=my_env)
+    exec_out = run_verilator_task(sim_executable_path, my_env, os.cpu_count())
     outlines = list(filter(lambda l: 'Writing ELF word to' not in l, exec_out.stdout.split('\n')))
 
     # Check stop success
