@@ -262,12 +262,16 @@ def calibrate_spikespeed(numinstrs:int = 10000) -> list:
     from rv.rv32i import rv32i_jal
     from time import time_ns
 
+    print(f"[DEBUG] Starting Spike speed calibration with {numinstrs} instructions")
+
     # First, create the file that contains the commands, if it does not already exist
     path_to_debug_file = __gen_spike_dbgcmd_file_for_trace_pcs('spikespeedcalibration', numinstrs, SPIKE_STARTADDR, True, 16)
+    print(f"[DEBUG] Generated Spike debug command file: {path_to_debug_file}")
 
     # Second, generate a dummy ELF file containing an infinite loop
     elfpath = os.path.join(PATH_TO_TMP, 'spikespeedcalibration.elf')
     gen_elf(rv32i_jal(0, 0).to_bytes(4, 'little'), SPIKE_STARTADDR, SPIKE_STARTADDR, elfpath, False)
+    print(f"[DEBUG] Generated ELF file at: {elfpath}")
 
     # Run the Spike command
     spike_shell_command = (
@@ -278,15 +282,21 @@ def calibrate_spikespeed(numinstrs:int = 10000) -> list:
         f"--pc={SPIKE_STARTADDR}",
         elfpath
     )
+    print(f"[DEBUG] Running Spike command: {' '.join(spike_shell_command)}")
 
     ns_before = time_ns()
-    subprocess.run(spike_shell_command, capture_output=True)
-    ns_elapsed = time_ns()-ns_before
+    result = subprocess.run(spike_shell_command, capture_output=True)
+    ns_elapsed = time_ns() - ns_before
+    print(f"[DEBUG] Spike execution completed in {ns_elapsed} ns")
+    print(f"[DEBUG] Spike output: {result.stdout.decode(errors='ignore')}")
 
     if not NO_REMOVE_TMPFILES:
         os.remove(path_to_debug_file)
         os.remove(elfpath)
         del path_to_debug_file
         del elfpath
+        print("[DEBUG] Temporary files removed")
 
     __spike_ns_per_instr = ns_elapsed / numinstrs
+    print(f"[DEBUG] Calibrated Spike time per instruction: {__spike_ns_per_instr} ns")
+

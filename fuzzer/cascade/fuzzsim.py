@@ -32,37 +32,48 @@ def run_verilator_task(sim_executable_path, my_env, num_threads):
             [sim_executable_path, "--threads", str(num_threads), "--threads-dpi", "1"],
             check=True, text=True, capture_output=True, env=my_env
         )
+        
+        print("[DEBUG] Verilator execution completed successfully.")
+        print(f"[DEBUG] {result}")
         return result
     except subprocess.CalledProcessError as e:
-        print(f"Error: Verilator failed with return code {e.returncode}")
-        print("STDOUT:", e.stdout)
-        print("STDERR:", e.stderr)
-        return None  # <== Если ошибка, возвращаем None
+        print(f"[DEBUG] Error: Verilator failed with return code {e.returncode}")
+        print("[DEBUG] STDOUT:", e.stdout)
+        print("[DEBUG] STDERR:", e.stderr)
+        return None
+
 
 
 # @param get_rfuzz_coverage_mask if True, then return a pair (is_stop_successful: bool, rfuzz_coverage_mask: int)
 # Return a pair (is_stop_successful: bool, reg_vals: int list of length <= MAX_NUM_PICKABLE_REGS-1 or None if is_stop_successful is False)
 def runsim_verilator(design_name, simlen, elfpath, num_int_regs: int = MAX_NUM_PICKABLE_REGS-1, num_float_regs: int = MAX_NUM_PICKABLE_FLOATING_REGS, coveragepath = None, get_rfuzz_coverage_mask = False):
+    print(f"[DEBUG] Running Verilator simulation for design: {design_name}, simlen: {simlen}, elfpath: {elfpath}")
+    print(f"[DEBUG] num_int_regs: {num_int_regs}, num_float_regs: {num_float_regs}, coveragepath: {coveragepath}, get_rfuzz_coverage_mask: {get_rfuzz_coverage_mask}")
+
     if DO_ASSERT:
         assert coveragepath is None or not get_rfuzz_coverage_mask
-
+    
     design_cfg       = designcfgs.get_design_cfg(design_name)
     cascadedir       = designcfgs.get_design_cascade_path(design_name)
     builddir         = os.path.join(cascadedir,'build')
+    print(f"[DEBUG] builddir: {builddir}")
 
     my_env = setup_sim_env(elfpath, '/dev/null', '/dev/null', simlen, cascadedir, coveragepath, False)
-
+    
     simdir               = f"run_{'coverage' if coveragepath else 'rfuzz' if get_rfuzz_coverage_mask else 'vanilla'}_notrace_0.1"
     verilatordir         = 'default-verilator'
     verilator_executable = 'V%s' % design_cfg['toplevel']
     sim_executable_path  = os.path.abspath(os.path.join(builddir, simdir, verilatordir, verilator_executable))
+    print(f"[DEBUG] sim_executable_path: {sim_executable_path}")
 
     # Run Verilator
     exec_out = run_verilator_task(sim_executable_path, my_env, os.cpu_count())
     outlines = list(filter(lambda l: 'Writing ELF word to' not in l, exec_out.stdout.split('\n')))
+    print(f"[DEBUG] Verilator execution completed. Output lines: {len(outlines)}")
 
     # Check stop success
     is_stop_successful = 'Found a stop request.' in exec_out.stdout
+    print(f"[DEBUG] is_stop_successful: {is_stop_successful}")
     if not is_stop_successful:
         return False, None
 
@@ -70,12 +81,16 @@ def runsim_verilator(design_name, simlen, elfpath, num_int_regs: int = MAX_NUM_P
     ret_intregs = []
     ret_floatregs = []
     curr_index = 0
+    
     for reg_id in range(1, num_int_regs+1):
         for row_id in itertools.count(curr_index):
             if len(outlines[row_id]) >= 19 and outlines[row_id][:19] == f"Dump of reg x{reg_id:02}: 0x":
-                ret_intregs.append(int(outlines[row_id][19:35], 16))
+                value = int(outlines[row_id][19:35], 16)
+                ret_intregs.append(value)
+                print(f"[DEBUG] Parsed int reg x{reg_id}: {value}")
                 curr_index = row_id + 1
                 break
+    
     if designcfgs.design_has_float_support(design_name):
         for fp_reg_id in range(num_float_regs):
             for row_id in itertools.count(curr_index):
@@ -83,18 +98,24 @@ def runsim_verilator(design_name, simlen, elfpath, num_int_regs: int = MAX_NUM_P
                     # This happens if the FPU is disabled in the final block and the final permission level does not permit enabling it.
                     ret_floatregs.append(None)
                     curr_index = row_id + 1
+                    print(f"[DEBUG] FPU disabled, adding None for f{fp_reg_id}")
                     break
                 if len(outlines[row_id]) >= 19 and outlines[row_id][:19] == f"Dump of reg f{fp_reg_id:02}: 0x":
-                    ret_floatregs.append(int(outlines[row_id][19:35], 16))
+                    value = int(outlines[row_id][19:35], 16)
+                    ret_floatregs.append(value)
+                    print(f"[DEBUG] Parsed float reg f{fp_reg_id}: {value}")
                     curr_index = row_id + 1
                     break
+    
     if get_rfuzz_coverage_mask:
         for row_id in range(curr_index, len(outlines)):
-            # print('outlines[row_id]', outlines[row_id])
             if len(outlines[row_id]) >= 21 and outlines[row_id][:21] == f"RFUZZ coverage mask: ":
                 rfuzz_coverage_mask = int(outlines[row_id][22:], 16)
+                print(f"[DEBUG] Parsed RFUZZ coverage mask: {rfuzz_coverage_mask}")
                 return True, rfuzz_coverage_mask
         raise Exception("Could not find the RFUZZ coverage mask.")
+    
+    print(f"[DEBUG] Returning register values: intregs({len(ret_intregs)}), floatregs({len(ret_floatregs)})")
     return True, (ret_intregs, ret_floatregs)
 
 

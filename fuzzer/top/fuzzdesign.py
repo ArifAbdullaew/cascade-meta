@@ -35,9 +35,13 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
     all_times_to_detection = []
 
     import multiprocessing as mp
+    import time
 
     num_workers = num_cores
     assert num_workers > 0
+
+    print("[DEBUG] Initializing fuzzing process")
+    print(f"[DEBUG] Design Name: {design_name}, Cores: {num_cores}, Seed Offset: {seed_offset}, Privileges: {can_authorize_privileges}")
 
     calibrate_spikespeed()
     profile_get_medeleg_mask(design_name)
@@ -46,24 +50,30 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
     newly_finished_tests = 0
     pool = mp.Pool(processes=num_workers)
     process_instance_id = seed_offset
-    # First, apply the function to all the workers.
+    
+    print("[DEBUG] Spawning initial worker processes")
     for _ in range(num_workers):
         memsize, _, _, num_bbs, authorize_privileges = gen_new_test_instance(design_name, process_instance_id, can_authorize_privileges)
+        print(f"[DEBUG] Spawning test instance: ID={process_instance_id}, MemSize={memsize}, Num_BBs={num_bbs}, Privileges={authorize_privileges}")
         pool.apply_async(fuzz_single_from_descriptor, args=(memsize, design_name, process_instance_id, num_bbs, authorize_privileges, None, True), callback=test_done_callback)
         process_instance_id += 1
 
     while True:
         time.sleep(2)
-        # Check whether we received new coverage paths
+        print("[DEBUG] Checking for newly finished tests...")
+        
         with callback_lock:
             if newly_finished_tests > 0:
+                print(f"[DEBUG] {newly_finished_tests} new test(s) finished, spawning new instances...")
                 for _ in range(newly_finished_tests):
                     memsize, _, _, num_bbs, authorize_privileges = gen_new_test_instance(design_name, process_instance_id, can_authorize_privileges)
+                    print(f"[DEBUG] Spawning test instance: ID={process_instance_id}, MemSize={memsize}, Num_BBs={num_bbs}, Privileges={authorize_privileges}")
                     pool.apply_async(fuzz_single_from_descriptor, args=(memsize, design_name, process_instance_id, num_bbs, authorize_privileges, None, True), callback=test_done_callback)
                     process_instance_id += 1
                 newly_finished_tests = 0
 
     # This code should never be reached.
     # Kill all remaining processes
+    print("[DEBUG] Terminating all worker processes")
     pool.close()
     pool.terminate()

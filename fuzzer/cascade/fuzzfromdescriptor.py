@@ -55,21 +55,24 @@ def gen_fuzzerstate_elf_expectedvals(memsize: int, design_name: str, randseed: i
 ###
 
 def run_rtl(memsize: int, design_name: str, randseed: int, nmax_bbs: int, authorize_privileges: bool, check_pc_spike_again: bool, nmax_instructions: int = None, nodependencybias: bool = False, simulator=SimulatorEnum.VERILATOR):
+    print(f"[DEBUG] Running RTL simulation for design: {design_name}, seed: {randseed}")
     fuzzerstate, rtl_elfpath, finalregvals_spikeresol, time_seconds_spent_in_gen_bbs, time_seconds_spent_in_spike_resol, time_seconds_spent_in_gen_elf = gen_fuzzerstate_elf_expectedvals(memsize, design_name, randseed, nmax_bbs, authorize_privileges, check_pc_spike_again, nmax_instructions, nodependencybias)
 
     start = time.time()
     is_success, rtl_msg = runtest_simulator(fuzzerstate, rtl_elfpath, finalregvals_spikeresol, simulator=simulator)
     time_seconds_spent_in_rtl_sim = time.time() - start
+    print(f"[DEBUG] RTL simulation completed in {time_seconds_spent_in_rtl_sim} seconds")
 
-    # For debugging, potentially expose the ELF files
     if NO_REMOVE_TMPFILES:
-        print('rtl elfpath', rtl_elfpath)
-    if not NO_REMOVE_TMPFILES:
+        print(f"[DEBUG] RTL ELF file retained at {rtl_elfpath}")
+    else:
         os.remove(rtl_elfpath)
-        del rtl_elfpath
+        print(f"[DEBUG] RTL ELF file {rtl_elfpath} removed")
 
     if not is_success:
+        print(f"[ERROR] RTL simulation failed: {rtl_msg}")
         raise Exception(rtl_msg)
+    
     return time_seconds_spent_in_gen_bbs, time_seconds_spent_in_spike_resol, time_seconds_spent_in_gen_elf, time_seconds_spent_in_rtl_sim
 
 ###
@@ -80,19 +83,22 @@ def run_rtl(memsize: int, design_name: str, randseed: int, nmax_bbs: int, author
 # Loggers are not yet very tested facilities.
 @timeout(seconds=60*60*2)
 def fuzz_single_from_descriptor(memsize: int, design_name: str, randseed: int, nmax_bbs: int, authorize_privileges: bool, loggers: list = None, check_pc_spike_again: bool = False, start_time: float = None):
+    print(f"[DEBUG] Starting fuzz test: memsize={memsize}, design_name={design_name}, randseed={randseed}, nmax_bbs={nmax_bbs}, authorize_privileges={authorize_privileges}, check_pc_spike_again={check_pc_spike_again}")
     try:
         gathered_times = run_rtl(memsize, design_name, randseed, nmax_bbs, authorize_privileges, check_pc_spike_again)
+        print(f"[DEBUG] Fuzz test completed successfully for seed {randseed}")
         if loggers is not None:
-            loggers[random.randrange(len(loggers))].log(True, {'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges}, False, '') # No message for successful runs
+            loggers[random.randrange(len(loggers))].log(True, {'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges}, False, '')
         else:
             return gathered_times
     except Exception as e:
+        emsg = str(e)
+        print(f"[ERROR] Exception occurred during fuzzing: {emsg}")
         if loggers is not None:
-            emsg = str(e)
             if 'Spike timeout' in emsg:
-                loggers[random.randrange(len(loggers))].log(False, {'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges}, True, '') # No message for Spike timeouts
+                loggers[random.randrange(len(loggers))].log(False, {'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges}, True, '')
             else:
                 loggers[random.randrange(len(loggers))].log(False, {'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges}, False, emsg)
         else:
-            print(f"Failed test_run_rtl_single for params memsize: `{memsize}`, design_name: `{design_name}`, check_pc_spike_again: `{check_pc_spike_again}`, randseed: `{randseed}`, nmax_bbs: `{nmax_bbs}`, authorize_privileges: `{authorize_privileges}` -- ({memsize}, {design_name}, {randseed}, {nmax_bbs}, {authorize_privileges})\n{e}")
+            print(f"[DEBUG] Failed test_run_rtl_single for params: memsize={memsize}, design_name={design_name}, check_pc_spike_again={check_pc_spike_again}, randseed={randseed}, nmax_bbs={nmax_bbs}, authorize_privileges={authorize_privileges}")
         return 0, 0, 0, 0
