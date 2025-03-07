@@ -16,15 +16,22 @@ from common.designcfgs import get_design_cascade_path
 
 import os
 import sys
+import ray 
 
 if __name__ == '__main__':
+    ray.init(address="auto")
+
     if "CASCADE_ENV_SOURCED" not in os.environ:
         raise Exception("The Cascade environment must be sourced prior to running the Python recipes.")
 
-    if len(sys.argv) < 4:
+    if len(sys.argv) < 3:
         raise Exception("Usage: python3 do_fuzzdesign.py <design_name> <num_cores> <seed_offset> <authorize_privileges> <tolerate_some_bug>")
 
     print(get_design_cascade_path(sys.argv[1]))
+
+    num_requested_cpus = int(sys.argv[2])
+    num_available_cpus = int(ray.cluster_resources().get("CPU", 1))
+    num_cpus = min(num_requested_cpus, num_available_cpus)  # Берем минимум
 
     if len(sys.argv) > 4:
         authorize_privileges = int(sys.argv[4])
@@ -39,7 +46,7 @@ if __name__ == '__main__':
     if tolerate_some_bug:
         tolerate_bug_for_eval_reduction(sys.argv[1])
 
-    fuzzdesign(sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), authorize_privileges)
+    fuzzdesign(sys.argv[1], num_cpus, int(sys.argv[3]), authorize_privileges)
 
 else:
     raise Exception("This module must be at the toplevel.")

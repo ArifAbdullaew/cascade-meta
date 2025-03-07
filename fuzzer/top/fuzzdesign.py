@@ -40,8 +40,8 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
     num_workers = num_cores
     assert num_workers > 0
 
-    print("[DEBUG] Initializing fuzzing process")
-    print(f"[DEBUG] Design Name: {design_name}, Cores: {num_cores}, Seed Offset: {seed_offset}, Privileges: {can_authorize_privileges}")
+    # print("[DEBUG] Initializing fuzzing process")
+    # print(f"[DEBUG] Design Name: {design_name}, Cores: {num_cores}, Seed Offset: {seed_offset}, Privileges: {can_authorize_privileges}")
 
     calibrate_spikespeed()
     profile_get_medeleg_mask(design_name)

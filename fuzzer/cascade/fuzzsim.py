@@ -14,7 +14,12 @@ import itertools
 import os
 import subprocess
 import sys
+import ray
 from enum import Enum
+
+if not ray.is_initialized():
+    ray.init(address="auto")
+    print(f"[DEBUG] Ray initialized with address: {ray.get_runtime_context().get_address()}")
 
 # Either Verilator or Modelsim
 class SimulatorEnum(Enum):
@@ -25,16 +30,22 @@ class SimulatorEnum(Enum):
 MAX_CYCLES_PER_INSTR = 30
 SETUP_CYCLES = 1000 # Without this, we had issues with BOOM with very short programs (typically <20 instructions) not being able to finish in time.
 
+@ray.remote
 def run_verilator_task(sim_executable_path, my_env, num_threads):
     try:
-        print(f"Running Verilator with {num_threads} threads...")
+        print(f"[DEBUG] Running Verilator with {num_threads} threads on {sim_executable_path}")
+
         result = subprocess.run(
             [sim_executable_path, "--threads", str(num_threads), "--threads-dpi", "1"],
-            check=True, text=True, capture_output=True, env=my_env
+            check=False,
+            text=True,
+            capture_output=True,
+            env=my_env
         )
-        
-        print("[DEBUG] Verilator execution completed successfully.")
-        print(f"[DEBUG] {result}")
+
+        if result.stderr:
+            print(f"[ERROR] STDERR from Verilator:\n{result.stderr}", file=sys.stderr, flush=True)
+
         return result
     except subprocess.CalledProcessError as e:
         print(f"[DEBUG] Error: Verilator failed with return code {e.returncode}")
@@ -46,7 +57,7 @@ def run_verilator_task(sim_executable_path, my_env, num_threads):
 
 # @param get_rfuzz_coverage_mask if True, then return a pair (is_stop_successful: bool, rfuzz_coverage_mask: int)
 # Return a pair (is_stop_successful: bool, reg_vals: int list of length <= MAX_NUM_PICKABLE_REGS-1 or None if is_stop_successful is False)
-def runsim_verilator(design_name, simlen, elfpath, num_int_regs: int = MAX_NUM_PICKABLE_REGS-1, num_float_regs: int = MAX_NUM_PICKABLE_FLOATING_REGS, coveragepath = None, get_rfuzz_coverage_mask = False):
+def runsim_verilator(design_name, simlen, elfpath, num_int_regs, num_float_regs, coveragepath=None, get_rfuzz_coverage_mask=False):
     print(f"[DEBUG] Running Verilator simulation for design: {design_name}, simlen: {simlen}, elfpath: {elfpath}")
     print(f"[DEBUG] num_int_regs: {num_int_regs}, num_float_regs: {num_float_regs}, coveragepath: {coveragepath}, get_rfuzz_coverage_mask: {get_rfuzz_coverage_mask}")
 
@@ -66,13 +77,46 @@ def runsim_verilator(design_name, simlen, elfpath, num_int_regs: int = MAX_NUM_P
     sim_executable_path  = os.path.abspath(os.path.join(builddir, simdir, verilatordir, verilator_executable))
     print(f"[DEBUG] sim_executable_path: {sim_executable_path}")
 
-    # Run Verilator
-    exec_out = run_verilator_task(sim_executable_path, my_env, os.cpu_count())
-    outlines = list(filter(lambda l: 'Writing ELF word to' not in l, exec_out.stdout.split('\n')))
+    # Get the number of available CPUs in the Ray cluster
+    num_available_cpus = int(ray.cluster_resources().get("CPU", 1))
+
+    # Minimum of 1, but no more than 1 CPU available
+    num_threads = max(1, num_available_cpus - 1)
+
+    # Number of tasks for load balancing
+    num_tasks = max(1, min(num_threads, num_available_cpus))
+
+    # Number of threads per task (no more cores per node)
+    num_threads_per_task = max(1, min(num_threads // num_tasks, os.cpu_count()))
+
+    print(f"[DEBUG] num_available_cpus: {num_available_cpus}, num_threads: {num_threads}, num_tasks: {num_tasks}, num_threads_per_task: {num_threads_per_task}")
+
+    # Running Verilator on different cluster nodes in parallel
+    futures = [run_verilator_task.remote(sim_executable_path, my_env, num_threads_per_task) for _ in range(num_tasks)]
+
+    # Waiting for all tasks to be completed
+    ready_futures, remaining_futures = ray.wait(futures, num_returns=len(futures))
+    results = ray.get(ready_futures)
+
+    # Output processing
+    outlines = []
+    error_count = 0
+    for stdout, stderr in results:
+        if stdout:
+            outlines.extend(filter(lambda l: 'Writing ELF word to' not in l, stdout.split('\n')))
+        if stderr:
+            print(f"[ERROR] STDERR: {stderr}")
+            error_count += 1
+
+    # If all tasks ended with an error - return an error
+    if error_count == len(results):
+        print(f"[ERROR] All Verilator tasks failed.")
+        return False, None
+
     print(f"[DEBUG] Verilator execution completed. Output lines: {len(outlines)}")
 
-    # Check stop success
-    is_stop_successful = 'Found a stop request.' in exec_out.stdout
+    # Verification of successful completion
+    is_stop_successful = any('Found a stop request.' in line for line in outlines)
     print(f"[DEBUG] is_stop_successful: {is_stop_successful}")
     if not is_stop_successful:
         return False, None
@@ -84,6 +128,8 @@ def runsim_verilator(design_name, simlen, elfpath, num_int_regs: int = MAX_NUM_P
     
     for reg_id in range(1, num_int_regs+1):
         for row_id in itertools.count(curr_index):
+            if row_id >= len(outlines):
+                break
             if len(outlines[row_id]) >= 19 and outlines[row_id][:19] == f"Dump of reg x{reg_id:02}: 0x":
                 value = int(outlines[row_id][19:35], 16)
                 ret_intregs.append(value)
