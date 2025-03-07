@@ -20,7 +20,7 @@ def test_done_callback(arg):
     global newly_finished_tests
     global callback_lock
     global curr_round_id
-    global 
+    global all_times_to_detection
     
     print(f"[DEBUG] test_done_callback() called with arg={arg}")
 
