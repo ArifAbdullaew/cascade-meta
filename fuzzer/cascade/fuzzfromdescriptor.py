@@ -88,17 +88,28 @@ def fuzz_single_from_descriptor(memsize: int, design_name: str, randseed: int, n
         gathered_times = run_rtl(memsize, design_name, randseed, nmax_bbs, authorize_privileges, check_pc_spike_again)
         print(f"[DEBUG] Fuzz test completed successfully for seed {randseed}")
         if loggers is not None:
-            loggers[random.randrange(len(loggers))].log(True, {'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges}, False, '')
+            logger = loggers[random.randrange(len(loggers))]
+            print(f"[DEBUG] Logging results with logger: {logger}")
+            logger.log(True, {'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges}, False, '')
+            print(f"[DEBUG] Logging completed successfully")
         else:
+            print(f"[DEBUG] Returning gathered_times: {gathered_times}")
             return gathered_times
     except Exception as e:
         emsg = str(e)
         print(f"[ERROR] Exception occurred during fuzzing: {emsg}")
         if loggers is not None:
+            logger = loggers[random.randrange(len(loggers))]
+            print(f"[DEBUG] Logging failure with logger: {logger}")
+            
             if 'Spike timeout' in emsg:
-                loggers[random.randrange(len(loggers))].log(False, {'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges}, True, '')
+                print(f"[DEBUG] Logging spike timeout failure")
+                logger.log(False, {'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges}, True, '')
             else:
-                loggers[random.randrange(len(loggers))].log(False, {'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges}, False, emsg)
+                print(f"[DEBUG] Logging general failure with message: {emsg}")
+                logger.log(False, {'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges}, False, emsg)
+            print(f"[DEBUG] Logging completed with failure")
         else:
             print(f"[DEBUG] Failed test_run_rtl_single for params: memsize={memsize}, design_name={design_name}, check_pc_spike_again={check_pc_spike_again}, randseed={randseed}, nmax_bbs={nmax_bbs}, authorize_privileges={authorize_privileges}")
+        print(f"[DEBUG] Returning failure values (0, 0, 0, 0)")
         return 0, 0, 0, 0

@@ -20,7 +20,10 @@ def test_done_callback(arg):
     global newly_finished_tests
     global callback_lock
     global curr_round_id
-    global all_times_to_detection
+    global 
+    
+    print(f"[DEBUG] test_done_callback() called with arg={arg}")
+
     with callback_lock:
         newly_finished_tests += 1
 
@@ -69,6 +72,7 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
                     memsize, _, _, num_bbs, authorize_privileges = gen_new_test_instance(design_name, process_instance_id, can_authorize_privileges)
                     print(f"[DEBUG] Spawning test instance: ID={process_instance_id}, MemSize={memsize}, Num_BBs={num_bbs}, Privileges={authorize_privileges}")
                     pool.apply_async(fuzz_single_from_descriptor, args=(memsize, design_name, process_instance_id, num_bbs, authorize_privileges, None, True), callback=test_done_callback)
+                    print(f"[DEBUG] Dispatched fuzz_single_from_descriptor for process {process_instance_id}")
                     process_instance_id += 1
                 newly_finished_tests = 0
 
