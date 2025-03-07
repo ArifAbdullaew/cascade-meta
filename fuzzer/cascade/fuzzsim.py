@@ -17,9 +17,6 @@ import sys
 import ray
 from enum import Enum
 
-if not ray.is_initialized():
-    ray.init(address="auto")
-    print(f"[DEBUG] Ray initialized with GCS address: {ray.get_runtime_context().gcs_address}")
 
 # Either Verilator or Modelsim
 class SimulatorEnum(Enum):
