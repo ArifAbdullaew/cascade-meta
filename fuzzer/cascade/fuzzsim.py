@@ -71,7 +71,9 @@ def runsim_verilator(design_name, simlen, elfpath, num_int_regs, num_float_regs,
 
     futures = [run_verilator_task.remote(sim_executable_path, my_env) for _ in range(num_tasks)]
 
+    print(f"[DEBUG] Waiting for Verilator tasks: {futures}")
     results = ray.get(futures)
+    print(f"[DEBUG] Verilator tasks completed: {results}")
 
     # Output processing
     outlines = []
