@@ -7,7 +7,7 @@
 from common.spike import calibrate_spikespeed
 from common.profiledesign import profile_get_medeleg_mask
 from cascade.fuzzfromdescriptor import gen_new_test_instance, fuzz_single_from_descriptor
-
+import ray
 import time
 import threading
 
@@ -27,57 +27,49 @@ def test_done_callback(arg):
     with callback_lock:
         newly_finished_tests += 1
 
+@ray.remote
+def fuzz_single_task(memsize, design_name, process_instance_id, num_bbs, authorize_privileges):
+    print(f"[DEBUG] Running fuzz_single_from_descriptor for instance {process_instance_id}")
+    return fuzz_single_from_descriptor(memsize, design_name, process_instance_id, num_bbs, authorize_privileges, None, True)
+
 def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize_privileges: bool):
-    global newly_finished_tests
-    global callback_lock
-    global all_times_to_detection
-    global curr_round_id
+    global newly_finished_tests, curr_round_id, all_times_to_detection
 
     newly_finished_tests = 0
     curr_round_id = 0
     all_times_to_detection = []
 
-    import multiprocessing as mp
-    import time
+    calibrate_spikespeed()
+    profile_get_medeleg_mask(design_name)
 
     num_workers = num_cores
     assert num_workers > 0
 
-    # print("[DEBUG] Initializing fuzzing process")
-    # print(f"[DEBUG] Design Name: {design_name}, Cores: {num_cores}, Seed Offset: {seed_offset}, Privileges: {can_authorize_privileges}")
+    print(f"[DEBUG] Starting Ray-based parallel testing on `{design_name}` with {num_workers} workers.")
 
-    calibrate_spikespeed()
-    profile_get_medeleg_mask(design_name)
-    print(f"Starting parallel testing of `{design_name}` on {num_workers} processes.")
-
-    newly_finished_tests = 0
-    pool = mp.Pool(processes=num_workers)
     process_instance_id = seed_offset
+
+    active_tasks = []
     
     print("[DEBUG] Spawning initial worker processes")
     for _ in range(num_workers):
         memsize, _, _, num_bbs, authorize_privileges = gen_new_test_instance(design_name, process_instance_id, can_authorize_privileges)
         print(f"[DEBUG] Spawning test instance: ID={process_instance_id}, MemSize={memsize}, Num_BBs={num_bbs}, Privileges={authorize_privileges}")
-        pool.apply_async(fuzz_single_from_descriptor, args=(memsize, design_name, process_instance_id, num_bbs, authorize_privileges, None, True), callback=test_done_callback)
+        task = fuzz_single_task.remote(memsize, design_name, process_instance_id, num_bbs, authorize_privileges)
+        active_tasks.append(task)
         process_instance_id += 1
 
     while True:
         time.sleep(2)
         print("[DEBUG] Checking for newly finished tests...")
-        
-        with callback_lock:
-            if newly_finished_tests > 0:
-                print(f"[DEBUG] {newly_finished_tests} new test(s) finished, spawning new instances...")
-                for _ in range(newly_finished_tests):
-                    memsize, _, _, num_bbs, authorize_privileges = gen_new_test_instance(design_name, process_instance_id, can_authorize_privileges)
-                    print(f"[DEBUG] Spawning test instance: ID={process_instance_id}, MemSize={memsize}, Num_BBs={num_bbs}, Privileges={authorize_privileges}")
-                    pool.apply_async(fuzz_single_from_descriptor, args=(memsize, design_name, process_instance_id, num_bbs, authorize_privileges, None, True), callback=test_done_callback)
-                    print(f"[DEBUG] Dispatched fuzz_single_from_descriptor for process {process_instance_id}")
-                    process_instance_id += 1
-                newly_finished_tests = 0
 
-    # This code should never be reached.
-    # Kill all remaining processes
-    print("[DEBUG] Terminating all worker processes")
-    pool.close()
-    pool.terminate()
+        ready_tasks, active_tasks = ray.wait(active_tasks, num_returns=1, timeout=0)
+
+        if ready_tasks:
+            print(f"[DEBUG] {len(ready_tasks)} test(s) finished, spawning new instances...")
+            for _ in range(len(ready_tasks)):
+                memsize, _, _, num_bbs, authorize_privileges = gen_new_test_instance(design_name, process_instance_id, can_authorize_privileges)
+                print(f"[DEBUG] Spawning test instance: ID={process_instance_id}, MemSize={memsize}, Num_BBs={num_bbs}, Privileges={authorize_privileges}")
+                task = fuzz_single_task.remote(memsize, design_name, process_instance_id, num_bbs, authorize_privileges)
+                active_tasks.append(task)
+                process_instance_id += 1

@@ -17,7 +17,6 @@ import sys
 import ray
 from enum import Enum
 
-
 # Either Verilator or Modelsim
 class SimulatorEnum(Enum):
     VERILATOR = 1
@@ -25,15 +24,16 @@ class SimulatorEnum(Enum):
 
 # The maximum number of cycles that we allow per run is MAX_CYCLES_PER_INSTR * num_instrs + SETUP_CYCLES.
 MAX_CYCLES_PER_INSTR = 30
-SETUP_CYCLES = 1000 # Without this, we had issues with BOOM with very short programs (typically <20 instructions) not being able to finish in time.
+SETUP_CYCLES = 1000  # Ensures enough time for short programs to execute.
 
 @ray.remote
-def run_verilator_task(sim_executable_path, my_env, num_threads):
+def run_verilator_task(sim_executable_path, my_env):
+    """ Запуск симуляции Verilator на удалённом узле """
     try:
-        print(f"[DEBUG] Running Verilator with {num_threads} threads on {sim_executable_path}")
+        print(f"[DEBUG] Running Verilator on {sim_executable_path}")
 
         result = subprocess.run(
-            [sim_executable_path, "--threads", str(num_threads), "--threads-dpi", "1"],
+            [sim_executable_path, "--threads", str(os.cpu_count() - 1), "--threads-dpi", "1"],
             check=False,
             text=True,
             capture_output=True,
@@ -43,57 +43,35 @@ def run_verilator_task(sim_executable_path, my_env, num_threads):
         if result.stderr:
             print(f"[ERROR] STDERR from Verilator:\n{result.stderr}", file=sys.stderr, flush=True)
 
-        return result
+        return result.stdout, result.stderr
     except subprocess.CalledProcessError as e:
         print(f"[DEBUG] Error: Verilator failed with return code {e.returncode}")
-        print("[DEBUG] STDOUT:", e.stdout)
-        print("[DEBUG] STDERR:", e.stderr)
-        return None
+        return None, e.stderr
 
-
-
-# @param get_rfuzz_coverage_mask if True, then return a pair (is_stop_successful: bool, rfuzz_coverage_mask: int)
-# Return a pair (is_stop_successful: bool, reg_vals: int list of length <= MAX_NUM_PICKABLE_REGS-1 or None if is_stop_successful is False)
 def runsim_verilator(design_name, simlen, elfpath, num_int_regs, num_float_regs, coveragepath=None, get_rfuzz_coverage_mask=False):
     print(f"[DEBUG] Running Verilator simulation for design: {design_name}, simlen: {simlen}, elfpath: {elfpath}")
-    print(f"[DEBUG] num_int_regs: {num_int_regs}, num_float_regs: {num_float_regs}, coveragepath: {coveragepath}, get_rfuzz_coverage_mask: {get_rfuzz_coverage_mask}")
 
-    if DO_ASSERT:
-        assert coveragepath is None or not get_rfuzz_coverage_mask
-    
-    design_cfg       = designcfgs.get_design_cfg(design_name)
-    cascadedir       = designcfgs.get_design_cascade_path(design_name)
-    builddir         = os.path.join(cascadedir,'build')
+    design_cfg = designcfgs.get_design_cfg(design_name)
+    cascadedir = designcfgs.get_design_cascade_path(design_name)
+    builddir = os.path.join(cascadedir, 'build')
     print(f"[DEBUG] builddir: {builddir}")
 
     my_env = setup_sim_env(elfpath, '/dev/null', '/dev/null', simlen, cascadedir, coveragepath, False)
     
-    simdir               = f"run_{'coverage' if coveragepath else 'rfuzz' if get_rfuzz_coverage_mask else 'vanilla'}_notrace_0.1"
-    verilatordir         = 'default-verilator'
+    simdir = f"run_{'coverage' if coveragepath else 'rfuzz' if get_rfuzz_coverage_mask else 'vanilla'}_notrace_0.1"
+    verilatordir = 'default-verilator'
     verilator_executable = 'V%s' % design_cfg['toplevel']
-    sim_executable_path  = os.path.abspath(os.path.join(builddir, simdir, verilatordir, verilator_executable))
+    sim_executable_path = os.path.abspath(os.path.join(builddir, simdir, verilatordir, verilator_executable))
     print(f"[DEBUG] sim_executable_path: {sim_executable_path}")
 
-    # Get the number of available CPUs in the Ray cluster
-    num_available_cpus = int(ray.cluster_resources().get("CPU", 1))
+    num_available_cpus = int(ray.available_resources().get("CPU", 1))
+    num_tasks = max(1, num_available_cpus // 2)  # Не нагружаем полностью узлы
 
-    # Minimum of 1, but no more than 1 CPU available
-    num_threads = max(1, num_available_cpus - 1)
+    print(f"[DEBUG] num_available_cpus: {num_available_cpus}, num_tasks: {num_tasks}")
 
-    # Number of tasks for load balancing
-    num_tasks = max(1, min(num_threads, num_available_cpus))
+    futures = [run_verilator_task.remote(sim_executable_path, my_env) for _ in range(num_tasks)]
 
-    # Number of threads per task (no more cores per node)
-    num_threads_per_task = max(1, min(num_threads // num_tasks, os.cpu_count()))
-
-    print(f"[DEBUG] num_available_cpus: {num_available_cpus}, num_threads: {num_threads}, num_tasks: {num_tasks}, num_threads_per_task: {num_threads_per_task}")
-
-    # Running Verilator on different cluster nodes in parallel
-    futures = [run_verilator_task.remote(sim_executable_path, my_env, num_threads_per_task) for _ in range(num_tasks)]
-
-    # Waiting for all tasks to be completed
-    ready_futures, remaining_futures = ray.wait(futures, num_returns=len(futures))
-    results = ray.get(ready_futures)
+    results = ray.get(futures)
 
     # Output processing
     outlines = []
@@ -115,19 +93,20 @@ def runsim_verilator(design_name, simlen, elfpath, num_int_regs, num_float_regs,
     # Verification of successful completion
     is_stop_successful = any('Found a stop request.' in line for line in outlines)
     print(f"[DEBUG] is_stop_successful: {is_stop_successful}")
+
     if not is_stop_successful:
         return False, None
 
-    # Retrieve the register values
+    # Читаем значения регистров
     ret_intregs = []
     ret_floatregs = []
     curr_index = 0
     
-    for reg_id in range(1, num_int_regs+1):
+    for reg_id in range(1, num_int_regs + 1):
         for row_id in itertools.count(curr_index):
             if row_id >= len(outlines):
                 break
-            if len(outlines[row_id]) >= 19 and outlines[row_id][:19] == f"Dump of reg x{reg_id:02}: 0x":
+            if outlines[row_id].startswith(f"Dump of reg x{reg_id:02}: 0x"):
                 value = int(outlines[row_id][19:35], 16)
                 ret_intregs.append(value)
                 print(f"[DEBUG] Parsed int reg x{reg_id}: {value}")
@@ -138,18 +117,26 @@ def runsim_verilator(design_name, simlen, elfpath, num_int_regs, num_float_regs,
         for fp_reg_id in range(num_float_regs):
             for row_id in itertools.count(curr_index):
                 if row_id >= len(outlines):
-                    # This happens if the FPU is disabled in the final block and the final permission level does not permit enabling it.
                     ret_floatregs.append(None)
-                    curr_index = row_id + 1
                     print(f"[DEBUG] FPU disabled, adding None for f{fp_reg_id}")
                     break
-                if len(outlines[row_id]) >= 19 and outlines[row_id][:19] == f"Dump of reg f{fp_reg_id:02}: 0x":
+                if outlines[row_id].startswith(f"Dump of reg f{fp_reg_id:02}: 0x"):
                     value = int(outlines[row_id][19:35], 16)
                     ret_floatregs.append(value)
                     print(f"[DEBUG] Parsed float reg f{fp_reg_id}: {value}")
                     curr_index = row_id + 1
                     break
     
+    
+    if get_rfuzz_coverage_mask:
+        for row_id in range(curr_index, len(outlines)):
+            if len(outlines[row_id]) >= 21 and outlines[row_id][:21] == f"RFUZZ coverage mask: ":
+                rfuzz_coverage_mask = int(outlines[row_id][22:], 16)
+                print(f"[DEBUG] Parsed RFUZZ coverage mask: {rfuzz_coverage_mask}")
+                return True, rfuzz_coverage_mask
+        raise Exception("Could not find the RFUZZ coverage mask.")
+    
+
     if get_rfuzz_coverage_mask:
         for row_id in range(curr_index, len(outlines)):
             if len(outlines[row_id]) >= 21 and outlines[row_id][:21] == f"RFUZZ coverage mask: ":
