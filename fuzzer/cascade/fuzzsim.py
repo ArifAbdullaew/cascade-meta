@@ -34,7 +34,7 @@ def run_verilator_task(sim_executable_path, my_env, num_threads):
 
         result = subprocess.run(
             [sim_executable_path, "--threads", str(num_threads), "--threads-dpi", "1"],
-            check=False,
+            check=True,
             text=True,
             capture_output=True,
             env=my_env
@@ -93,7 +93,8 @@ def runsim_verilator(design_name, simlen, elfpath, num_int_regs, num_float_regs,
 
     # Waiting for all tasks to be completed
     ready_futures, remaining_futures = ray.wait(futures, num_returns=len(futures))
-    results = ray.get(ready_futures)
+    results = [ray.get(future) for future in ready_futures]  # Явно получаем каждый кортеж
+
 
     # Output processing
     outlines = []

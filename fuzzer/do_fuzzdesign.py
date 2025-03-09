@@ -31,7 +31,7 @@ if __name__ == '__main__':
 
     num_requested_cpus = int(sys.argv[2])
     num_available_cpus = int(ray.cluster_resources().get("CPU", 1))
-    num_cpus = min(num_requested_cpus, num_available_cpus)  # Берем минимум
+    num_cpus = min(num_requested_cpus, num_available_cpus)
 
     if len(sys.argv) > 4:
         authorize_privileges = int(sys.argv[4])

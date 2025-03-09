@@ -12,7 +12,7 @@ from cascade.basicblock import gen_basicblocks
 from cascade.fuzzsim import SimulatorEnum, runtest_simulator
 from cascade.genelf import gen_elf_from_bbs
 from cascade.spikeresolution import spike_resolution
-
+import ray 
 import os
 import random
 import time
@@ -82,34 +82,42 @@ def run_rtl(memsize: int, design_name: str, randseed: int, nmax_bbs: int, author
 # This function runs a single test run from a test descriptor (memsize, design_name, randseed, nmax_bbs) and returns the gathered times (used for the performance evaluation plot).
 # Loggers are not yet very tested facilities.
 @timeout(seconds=60*60*2)
-def fuzz_single_from_descriptor(memsize: int, design_name: str, randseed: int, nmax_bbs: int, authorize_privileges: bool, loggers: list = None, check_pc_spike_again: bool = False, start_time: float = None):
-    print(f"[DEBUG] Starting fuzz test: memsize={memsize}, design_name={design_name}, randseed={randseed}, nmax_bbs={nmax_bbs}, authorize_privileges={authorize_privileges}, check_pc_spike_again={check_pc_spike_again}")
+@ray.remote
+def fuzz_single_from_descriptor(memsize: int, design_name: str, randseed: int, 
+                                nmax_bbs: int, authorize_privileges: bool, 
+                                loggers: list = None, check_pc_spike_again: bool = False, 
+                                start_time: float = None):
     try:
         gathered_times = run_rtl(memsize, design_name, randseed, nmax_bbs, authorize_privileges, check_pc_spike_again)
-        print(f"[DEBUG] Fuzz test completed successfully for seed {randseed}")
         if loggers is not None:
-            logger = loggers[random.randrange(len(loggers))]
-            print(f"[DEBUG] Logging results with logger: {logger}")
-            logger.log(True, {'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges}, False, '')
-            print(f"[DEBUG] Logging completed successfully")
+            # Логирование успешного прогона (если используется логгер)
+            idx = random.randrange(len(loggers))
+            loggers[idx].log(True, {
+                'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 
+                'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges
+            }, False, '')
         else:
-            print(f"[DEBUG] Returning gathered_times: {gathered_times}")
+            # Возвращаем собранные времена выполнения фаззера (если нет логгера)
             return gathered_times
     except Exception as e:
-        emsg = str(e)
-        print(f"[ERROR] Exception occurred during fuzzing: {emsg}")
         if loggers is not None:
-            logger = loggers[random.randrange(len(loggers))]
-            print(f"[DEBUG] Logging failure with logger: {logger}")
-            
+            # Логирование неуспешного прогона (исключение) через логгер
+            emsg = str(e)
+            idx = random.randrange(len(loggers))
             if 'Spike timeout' in emsg:
-                print(f"[DEBUG] Logging spike timeout failure")
-                logger.log(False, {'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges}, True, '')
+                loggers[idx].log(False, {
+                    'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 
+                    'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges
+                }, True, '')
             else:
-                print(f"[DEBUG] Logging general failure with message: {emsg}")
-                logger.log(False, {'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges}, False, emsg)
-            print(f"[DEBUG] Logging completed with failure")
+                loggers[idx].log(False, {
+                    'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 
+                    'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges
+                }, False, emsg)
         else:
-            print(f"[DEBUG] Failed test_run_rtl_single for params: memsize={memsize}, design_name={design_name}, check_pc_spike_again={check_pc_spike_again}, randseed={randseed}, nmax_bbs={nmax_bbs}, authorize_privileges={authorize_privileges}")
-        print(f"[DEBUG] Returning failure values (0, 0, 0, 0)")
+            # Выводим сообщение об ошибке, если логгер не используется
+            print(f"Failed test_run_rtl_single for params memsize:`{memsize}`, "
+                  f"design:`{design_name}`, spike_check:`{check_pc_spike_again}`, "
+                  f"randseed:`{randseed}`, nmax_bbs:`{nmax_bbs}`, priv:`{authorize_privileges}`\n{e}")
+        # Возвращаем специальное значение, обозначающее сбой (0,0,0,0)
         return 0, 0, 0, 0
