@@ -82,7 +82,7 @@ def run_rtl(memsize: int, design_name: str, randseed: int, nmax_bbs: int, author
 # This function runs a single test run from a test descriptor (memsize, design_name, randseed, nmax_bbs) and returns the gathered times (used for the performance evaluation plot).
 # Loggers are not yet very tested facilities.
 @timeout(seconds=60*60*2)
-@ray.remote
+# @ray.remote
 def fuzz_single_from_descriptor(memsize: int, design_name: str, randseed: int, 
                                 nmax_bbs: int, authorize_privileges: bool, 
                                 loggers: list = None, check_pc_spike_again: bool = False, 
