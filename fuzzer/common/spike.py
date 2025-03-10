@@ -130,6 +130,7 @@ def run_trace_regs_at_pc_locs(identifier_str: str, elfpath: str, rvflags: str, s
 
     # First, create the file that contains the commands, if it does not already exist
     path_to_debug_file = __gen_spike_dbgcmd_file_for_trace_regs_at_pc_locs(identifier_str, startpc, regdump_reqs, dump_final_reg_vals, final_addr, num_fp_regs, dump_freg_format)
+    print(f"[DEBUG] Spike calibration received: {__spike_ns_per_instr}")
 
     # Second, run the Spike command
     spike_shell_command = (
