@@ -7,8 +7,9 @@
 from common.spike import calibrate_spikespeed
 from common.profiledesign import profile_get_medeleg_mask
 from cascade.fuzzfromdescriptor import gen_new_test_instance, fuzz_single_from_descriptor
-import ray 
+import ray
 import time
+import multiprocessing as mp
 import threading
 
 callback_lock = threading.Lock()
@@ -21,7 +22,7 @@ def test_done_callback(arg):
     global callback_lock
     global curr_round_id
     global all_times_to_detection
-    
+
     print(f"[DEBUG] test_done_callback() called with arg={arg}")
 
     with callback_lock:
@@ -38,26 +39,27 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
     profile_get_medeleg_mask(design_name)
     print(f"Starting parallel testing of `{design_name}` on {num_workers} workers.")
 
+    pool = mp.Pool(processes=num_workers)
     process_instance_id = seed_offset
     futures = []
+    
+    # Запускаем первые задачи в multiprocessing
     for _ in range(num_workers):
         memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(design_name, process_instance_id, can_authorize_privileges)
-        futures.append(fuzz_single_from_descriptor(
-            memsize, design_name, process_instance_id, num_bbs, authorize_priv, None, True
-        ))
+        futures.append(pool.apply_async(fuzz_single_from_descriptor, args=(memsize, design_name, process_instance_id, num_bbs, authorize_priv, None, True), callback=test_done_callback))
         process_instance_id += 1
 
     while True:
-        done, remaining = ray.wait(futures, num_returns=1)
-        finished_ref = done[0]
-        try:
-            _ = ray.get(finished_ref)
-        except Exception:
-            pass
-        memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(design_name, process_instance_id, can_authorize_privileges)
-        new_future = fuzz_single_from_descriptor(
-            memsize, design_name, process_instance_id, num_bbs, authorize_priv, None, True
-        )
-        process_instance_id += 1
-        futures = remaining + [new_future]
+        time.sleep(2)
 
+        with callback_lock:
+            if newly_finished_tests > 0:
+                for _ in range(newly_finished_tests):
+                    memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(design_name, process_instance_id, can_authorize_privileges)
+                    futures.append(pool.apply_async(fuzz_single_from_descriptor, args=(memsize, design_name, process_instance_id, num_bbs, authorize_priv, None, True), callback=test_done_callback))
+                    process_instance_id += 1
+                newly_finished_tests = 0
+
+    # Этот код не должен выполняться
+    pool.close()
+    pool.terminate()
