@@ -6,6 +6,7 @@
 
 import itertools
 import os
+import ray
 import subprocess
 from pathlib import Path
 from params.runparams import DO_ASSERT, PATH_TO_TMP, NO_REMOVE_TMPFILES
@@ -256,7 +257,7 @@ def get_spike_timeout_seconds() -> int:
     return max((SPIKE_TIMEOUT_SLACK_FACTOR*_get_spike_ns_per_instr())/1e9, 10)
 
 # @brief Runs a spike instance and returns the average nanoseconds per instruction.
-@cache
+@ray.remote
 def calibrate_spikespeed(numinstrs:int = 10000) -> list:
     global __spike_ns_per_instr
     from common.bytestoelf import gen_elf

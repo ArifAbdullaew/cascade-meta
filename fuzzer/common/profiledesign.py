@@ -15,7 +15,7 @@ from cascade.cfinstructionclasses import ImmRdInstruction, RegImmInstruction, In
 from cascade.fuzzerstate import FuzzerState
 from cascade.genelf import gen_elf_from_bbs
 from cascade.fuzzsim import runtest_verilator_forprofiling
-
+import ray
 ###
 # Internal functions
 ###
@@ -84,7 +84,7 @@ def __get_medeleg_mask(design_name: str):
 ###
 
 PROFILED_MEDELEG_MASK = None
-
+@ray.remote
 def profile_get_medeleg_mask(design_name: str):
     print(f"[DEBUG] Profiling medeleg mask for design: {design_name}")
     if "picorv32" in design_name:
