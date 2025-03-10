@@ -300,4 +300,5 @@ def calibrate_spikespeed(numinstrs: int = 10000):
 
     __spike_ns_per_instr = ns_elapsed / numinstrs
     print(f"[DEBUG] Calibrated Spike time per instruction: {__spike_ns_per_instr} ns")
-    return ray.put(__spike_ns_per_instr)
+
+    return __spike_ns_per_instr 

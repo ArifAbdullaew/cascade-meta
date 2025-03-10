@@ -38,14 +38,12 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
             ray.init()
 
     # Предварительная настройка (калибровка Spike, профилирование дизайна)
-    # Предварительная настройка (калибровка Spike, профилирование дизайна)
-    __spike_ns_per_instr_ref = calibrate_spikespeed.remote()
-    __spike_ns_per_instr_ref = ray.get(__spike_ns_per_instr_ref)  # Ждем завершения калибровки
-
-    # Передаем значение в Ray, чтобы его могли использовать воркеры
-    __spike_ns_per_instr_ref = ray.put(__spike_ns_per_instr_ref)
+    __spike_ns_per_instr = ray.get(calibrate_spikespeed.remote())  # Просто получаем значение
     PROFILED_MEDELEG_MASK = ray.get(profile_get_medeleg_mask.remote(design_name))
-    print(f"Starting parallel testing of `{design_name}` on {num_workers} workers.")
+
+    # Передаём эти значения в Ray, чтобы воркеры могли их использовать
+    __spike_ns_per_instr_ref = ray.put(__spike_ns_per_instr)
+    profiled_medeleg_mask_ref = ray.put(PROFILED_MEDELEG_MASK)
 
     # Запуск начальных задач фаззинга на num_workers параллельных рабочих Ray
     process_instance_id = seed_offset

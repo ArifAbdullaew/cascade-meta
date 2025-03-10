@@ -89,13 +89,10 @@ def profile_get_medeleg_mask(design_name: str):
     print(f"[DEBUG] Profiling medeleg mask for design: {design_name}")    
     if "picorv32" in design_name:
         print("[DEBUG] Design does not support medeleg, returning 0")
-        profiled_mask = 0
+        return 0
     else:
-        profiled_mask = __get_medeleg_mask(design_name)
+        return __get_medeleg_mask(design_name)  # Просто возвращаем значение
 
-    global PROFILED_MEDELEG_MASK
-    PROFILED_MEDELEG_MASK = profiled_mask  
-    return profiled_mask  
 
 # @return the mask of medeleg bits that are supported by the design
 def get_medeleg_mask(design_name: str):
