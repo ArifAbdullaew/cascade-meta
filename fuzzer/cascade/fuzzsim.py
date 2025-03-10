@@ -54,6 +54,7 @@ def run_verilator_task(sim_executable_path, my_env, num_threads):
 
 # @param get_rfuzz_coverage_mask if True, then return a pair (is_stop_successful: bool, rfuzz_coverage_mask: int)
 # Return a pair (is_stop_successful: bool, reg_vals: int list of length <= MAX_NUM_PICKABLE_REGS-1 or None if is_stop_successful is False)
+@ray.remote
 def runsim_verilator(design_name, simlen, elfpath, num_int_regs, num_float_regs, coveragepath=None, get_rfuzz_coverage_mask=False):
     print(f"[DEBUG] Running Verilator simulation for design: {design_name}, simlen: {simlen}, elfpath: {elfpath}")
     print(f"[DEBUG] num_int_regs: {num_int_regs}, num_float_regs: {num_float_regs}, coveragepath: {coveragepath}, get_rfuzz_coverage_mask: {get_rfuzz_coverage_mask}")
@@ -74,44 +75,21 @@ def runsim_verilator(design_name, simlen, elfpath, num_int_regs, num_float_regs,
     sim_executable_path  = os.path.abspath(os.path.join(builddir, simdir, verilatordir, verilator_executable))
     print(f"[DEBUG] sim_executable_path: {sim_executable_path}")
 
-    # Get the number of available CPUs in the Ray cluster
-    num_available_cpus = int(ray.cluster_resources().get("CPU", 1))
+    # Запускаем Verilator с указанными потоками
+    result = subprocess.run(
+        [sim_executable_path,"--threads-dpi", "1"],
+        check=True,
+        text=True,
+        capture_output=True,
+        env=my_env
+    )
+    
+    outlines = list(filter(lambda l: 'Writing ELF word to' not in l, result.stdout.split('\n')))
 
-    # Minimum of 1, but no more than 1 CPU available
-    num_threads = max(1, num_available_cpus - 1)
-
-    # Number of tasks for load balancing
-    num_tasks = max(1, min(num_threads, num_available_cpus))
-
-    # Number of threads per task (no more cores per node)
-    num_threads_per_task = max(1, min(num_threads // num_tasks, os.cpu_count()))
-
-    print(f"[DEBUG] num_available_cpus: {num_available_cpus}, num_threads: {num_threads}, num_tasks: {num_tasks}, num_threads_per_task: {num_threads_per_task}")
-
-    # Running Verilator on different cluster nodes in parallel
-    futures = [run_verilator_task.remote(sim_executable_path, my_env, num_threads_per_task) for _ in range(num_tasks)]
-
-    # Waiting for all tasks to be completed
-    ready_futures, remaining_futures = ray.wait(futures, num_returns=len(futures))
-    results = [ray.get(future) for future in ready_futures]  # Явно получаем каждый кортеж
-
-
-    # Output processing
-    outlines = []
-    error_count = 0
-    for stdout, stderr in results:
-        if stdout:
-            outlines.extend(filter(lambda l: 'Writing ELF word to' not in l, stdout.split('\n')))
-        if stderr:
-            print(f"[ERROR] STDERR: {stderr}")
-            error_count += 1
-
-    # If all tasks ended with an error - return an error
-    if error_count == len(results):
-        print(f"[ERROR] All Verilator tasks failed.")
+    # Проверяем успешность остановки
+    is_stop_successful = 'Found a stop request.' in result.stdout
+    if not is_stop_successful:
         return False, None
-
-    print(f"[DEBUG] Verilator execution completed. Output lines: {len(outlines)}")
 
     # Verification of successful completion
     is_stop_successful = any('Found a stop request.' in line for line in outlines)

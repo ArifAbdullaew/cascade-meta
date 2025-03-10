@@ -62,7 +62,6 @@ def gen_fuzzerstate_elf_expectedvals(memsize: int, design_name: str, randseed: i
 ###
 # Exposed function
 ###
-
 def run_rtl(memsize: int, design_name: str, randseed: int, nmax_bbs: int, authorize_privileges: bool, check_pc_spike_again: bool, nmax_instructions: int = None, nodependencybias: bool = False, simulator=SimulatorEnum.VERILATOR):
     print(f"[DEBUG] Running RTL simulation for design: {design_name}, seed: {randseed}")
     fuzzerstate, rtl_elfpath, finalregvals_spikeresol, time_seconds_spent_in_gen_bbs, time_seconds_spent_in_spike_resol, time_seconds_spent_in_gen_elf = gen_fuzzerstate_elf_expectedvals(memsize, design_name, randseed, nmax_bbs, authorize_privileges, check_pc_spike_again, nmax_instructions, nodependencybias)
@@ -91,7 +90,6 @@ def run_rtl(memsize: int, design_name: str, randseed: int, nmax_bbs: int, author
 # This function runs a single test run from a test descriptor (memsize, design_name, randseed, nmax_bbs) and returns the gathered times (used for the performance evaluation plot).
 # Loggers are not yet very tested facilities.
 @timeout(seconds=60*60*2)
-@ray.remote
 def fuzz_single_from_descriptor(memsize: int, design_name: str, randseed: int, 
                                 nmax_bbs: int, authorize_privileges: bool, 
                                 loggers: list = None, check_pc_spike_again: bool = False, 

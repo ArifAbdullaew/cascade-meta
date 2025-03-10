@@ -32,15 +32,12 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
     assert num_workers > 0
 
     if not ray.is_initialized():
-        try:
-            ray.init(address="auto")
-        except Exception:
-            ray.init()
+        ray.init(address="auto")  
 
     calibrate_spikespeed()
     profile_get_medeleg_mask(design_name)
-    
-    # Запуск начальных задач фаззинга на num_workers параллельных рабочих Ray
+    print(f"Starting parallel testing of `{design_name}` on {num_workers} workers.")
+
     process_instance_id = seed_offset
     futures = []
     for _ in range(num_workers):
@@ -50,22 +47,17 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
         ))
         process_instance_id += 1
 
-    # Бесконечный цикл: по мере завершения задач запускаются новые, чтобы постоянно поддерживать num_workers задач
     while True:
-        # Ожидаем завершения хотя бы одной задачи
         done, remaining = ray.wait(futures, num_returns=1)
         finished_ref = done[0]
-        # Получаем результат (или исключение) завершённой задачи, чтобы освободить ресурсы
         try:
             _ = ray.get(finished_ref)
         except Exception:
             pass
-        # Генерируем и запускаем новую задачу вместо завершённой
         memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(design_name, process_instance_id, can_authorize_privileges)
         new_future = fuzz_single_from_descriptor.remote(
             memsize, design_name, process_instance_id, num_bbs, authorize_priv, None, True
         )
         process_instance_id += 1
-        # Обновляем список активных задач (количество остаётся равным num_workers)
         futures = remaining + [new_future]
 
