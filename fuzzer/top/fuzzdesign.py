@@ -32,34 +32,41 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
     num_workers = num_cores
     assert num_workers > 0
 
-    if not ray.is_initialized():
-        ray.init(address="auto")  
-
     calibrate_spikespeed()
     profile_get_medeleg_mask(design_name)
+
     print(f"Starting parallel testing of `{design_name}` on {num_workers} workers.")
 
-    pool = mp.Pool(processes=num_workers)
     process_instance_id = seed_offset
     futures = []
-    
-    # Запускаем первые задачи в multiprocessing
+
     for _ in range(num_workers):
-        memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(design_name, process_instance_id, can_authorize_privileges)
-        futures.append(pool.apply_async(fuzz_single_from_descriptor, args=(memsize, design_name, process_instance_id, num_bbs, authorize_priv, None, True), callback=test_done_callback))
+        memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(
+            design_name, process_instance_id, can_authorize_privileges
+        )
+        # Запускаем функцию ЛОКАЛЬНО, без remote()
+        future = fuzz_single_from_descriptor(
+            memsize, design_name, process_instance_id, num_bbs, authorize_priv, None, True
+        )
+        futures.append(future)
         process_instance_id += 1
 
     while True:
-        time.sleep(2)
+        time.sleep(2)  # Ожидание, чтобы не перегружать CPU
 
-        with callback_lock:
-            if newly_finished_tests > 0:
-                for _ in range(newly_finished_tests):
-                    memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(design_name, process_instance_id, can_authorize_privileges)
-                    futures.append(pool.apply_async(fuzz_single_from_descriptor, args=(memsize, design_name, process_instance_id, num_bbs, authorize_priv, None, True), callback=test_done_callback))
-                    process_instance_id += 1
-                newly_finished_tests = 0
+        # Проверяем, завершились ли какие-то задачи
+        completed = [f for f in futures if isinstance(f, tuple)]
+        if completed:
+            for _ in range(len(completed)):
+                memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(
+                    design_name, process_instance_id, can_authorize_privileges
+                )
+                future = fuzz_single_from_descriptor(
+                    memsize, design_name, process_instance_id, num_bbs, authorize_priv, None, True
+                )
+                futures.append(future)
+                process_instance_id += 1
 
-    # Этот код не должен выполняться
-    pool.close()
-    pool.terminate()
+            # Удаляем завершенные задачи
+            futures = [f for f in futures if not isinstance(f, tuple)]
+
