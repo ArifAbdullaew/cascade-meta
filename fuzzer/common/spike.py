@@ -144,7 +144,7 @@ def run_trace_regs_at_pc_locs(identifier_str: str, elfpath: str, rvflags: str, s
     )
 
     try:
-        spike_out = subprocess.run(spike_shell_command, capture_output=True, timeout=get_spike_timeout_seconds()).stderr
+        spike_out = subprocess.run(spike_shell_command, capture_output=True).stderr #timeout=get_spike_timeout_seconds()
     except Exception as e:
         raise Exception(f"Spike timeout (A) for identifier str: {identifier_str}. Command: {' '.join(filter(lambda s: '--debug-cmd' not in s, spike_shell_command))}  Debug file: {path_to_debug_file}")
     if not NO_REMOVE_TMPFILES:
