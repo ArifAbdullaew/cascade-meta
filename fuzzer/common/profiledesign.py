@@ -86,14 +86,14 @@ def __get_medeleg_mask(design_name: str):
 PROFILED_MEDELEG_MASK = None
 @ray.remote
 def profile_get_medeleg_mask(design_name: str):
-    print(f"[DEBUG] Profiling medeleg mask for design: {design_name}")
+    print(f"[DEBUG] Profiling medeleg mask for design: {design_name}")    
     if "picorv32" in design_name:
         print("[DEBUG] Design does not support medeleg, returning 0")
-        return ray.put(0)
-    global PROFILED_MEDELEG_MASK
-    PROFILED_MEDELEG_MASK = __get_medeleg_mask(design_name)
-    print(f"[DEBUG] PROFILED_MEDELEG_MASK set to: {PROFILED_MEDELEG_MASK}")
-    return ray.put(PROFILED_MEDELEG_MASK)
+        PROFILED_MEDELEG_MASK = 0  
+    else:
+        PROFILED_MEDELEG_MASK = __get_medeleg_mask(design_name)
+    
+    ray.put(PROFILED_MEDELEG_MASK)
 
 # @return the mask of medeleg bits that are supported by the design
 def get_medeleg_mask(design_name: str):

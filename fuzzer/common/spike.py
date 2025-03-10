@@ -299,6 +299,5 @@ def calibrate_spikespeed(numinstrs:int = 10000) -> list:
         print("[DEBUG] Temporary files removed")
 
     __spike_ns_per_instr = ns_elapsed / numinstrs
+    ray.put(__spike_ns_per_instr)
     print(f"[DEBUG] Calibrated Spike time per instruction: {__spike_ns_per_instr} ns")
-
-    return ray.put(__spike_ns_per_instr)
