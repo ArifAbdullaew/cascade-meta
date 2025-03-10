@@ -258,7 +258,7 @@ def get_spike_timeout_seconds() -> int:
 
 # @brief Runs a spike instance and returns the average nanoseconds per instruction.
 @ray.remote
-def calibrate_spikespeed(numinstrs:int = 10000) -> list:
+def calibrate_spikespeed(numinstrs: int = 10000):
     global __spike_ns_per_instr
     from common.bytestoelf import gen_elf
     from rv.rv32i import rv32i_jal
@@ -299,5 +299,5 @@ def calibrate_spikespeed(numinstrs:int = 10000) -> list:
         print("[DEBUG] Temporary files removed")
 
     __spike_ns_per_instr = ns_elapsed / numinstrs
-    ray.put(__spike_ns_per_instr)
     print(f"[DEBUG] Calibrated Spike time per instruction: {__spike_ns_per_instr} ns")
+    return ray.put(__spike_ns_per_instr)
