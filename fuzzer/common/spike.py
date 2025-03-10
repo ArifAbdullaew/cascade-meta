@@ -257,8 +257,8 @@ def get_spike_timeout_seconds() -> int:
     return max((SPIKE_TIMEOUT_SLACK_FACTOR*_get_spike_ns_per_instr())/1e9, 10)
 
 # @brief Runs a spike instance and returns the average nanoseconds per instruction.
-@ray.remote
-def calibrate_spikespeed(numinstrs: int = 10000):
+@cache
+def calibrate_spikespeed(numinstrs:int = 10000) -> list:
     global __spike_ns_per_instr
     from common.bytestoelf import gen_elf
     from rv.rv32i import rv32i_jal
@@ -287,9 +287,8 @@ def calibrate_spikespeed(numinstrs: int = 10000):
     print(f"[DEBUG] Running Spike command: {' '.join(spike_shell_command)}")
 
     ns_before = time_ns()
-    result = subprocess.run(spike_shell_command, capture_output=True)
-    ns_elapsed = time_ns() - ns_before
-    print(f"[DEBUG] Spike execution completed in {ns_elapsed} ns")
+    subprocess.run(spike_shell_command, capture_output=True)
+    ns_elapsed = time_ns()-ns_before
 
     if not NO_REMOVE_TMPFILES:
         os.remove(path_to_debug_file)
@@ -301,4 +300,4 @@ def calibrate_spikespeed(numinstrs: int = 10000):
     __spike_ns_per_instr = ns_elapsed / numinstrs
     print(f"[DEBUG] Calibrated Spike time per instruction: {__spike_ns_per_instr} ns")
 
-    return __spike_ns_per_instr 
+    ray.put(__spike_ns_per_instr)
