@@ -205,7 +205,7 @@ def run_trace_all_pcs(identifier_str: str, elfpath: str, rvflags: str, numinstrs
     )
 
     try:
-        spike_out = subprocess.run(spike_shell_command, capture_output=True, timeout=get_spike_timeout_seconds()).stderr
+        spike_out = subprocess.run(spike_shell_command, capture_output=True).stderr #, timeout=get_spike_timeout_seconds()
     except Exception as e:
         raise Exception(f"Spike timeout (B) for identifier str: {identifier_str}.\nCommand: {' '.join(spike_shell_command)}")
 
