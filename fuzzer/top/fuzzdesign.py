@@ -28,6 +28,12 @@ def test_done_callback(arg):
     with callback_lock:
         newly_finished_tests += 1
 
+import ray
+import time
+from common.spike import calibrate_spikespeed
+from common.profiledesign import profile_get_medeleg_mask
+from cascade.fuzzfromdescriptor import gen_new_test_instance, fuzz_single_from_descriptor
+
 def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize_privileges: bool):
     num_workers = num_cores
     assert num_workers > 0
@@ -44,29 +50,37 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
         memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(
             design_name, process_instance_id, can_authorize_privileges
         )
-        # Запускаем функцию ЛОКАЛЬНО, без remote()
-        future = fuzz_single_from_descriptor(
+        future = ray.put(fuzz_single_from_descriptor(
             memsize, design_name, process_instance_id, num_bbs, authorize_priv, None, True
-        )
+        ))
         futures.append(future)
         process_instance_id += 1
 
-    while True:
-        time.sleep(2)  # Ожидание, чтобы не перегружать CPU
+    while futures:
+        done, remaining = ray.wait(futures, num_returns=1, timeout=10)  
 
-        # Проверяем, завершились ли какие-то задачи
-        completed = [f for f in futures if isinstance(f, tuple)]
-        if completed:
-            for _ in range(len(completed)):
-                memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(
-                    design_name, process_instance_id, can_authorize_privileges
-                )
-                future = fuzz_single_from_descriptor(
-                    memsize, design_name, process_instance_id, num_bbs, authorize_priv, None, True
-                )
-                futures.append(future)
-                process_instance_id += 1
+        for finished_ref in done:
+            try:
+                result = ray.get(finished_ref)  # Получаем результат
+                print(f"[INFO] Завершена задача: {result}")  
+            except Exception as e:
+                print(f"[ERROR] Ошибка в `fuzz_single_from_descriptor`: {e}")
 
-            # Удаляем завершенные задачи
-            futures = [f for f in futures if not isinstance(f, tuple)]
+        # **Обновляем список активных задач**
+        futures = remaining
+
+        # **Запускаем новую задачу**
+        memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(
+            design_name, process_instance_id, can_authorize_privileges
+        )
+        new_future = ray.put(fuzz_single_from_descriptor(
+            memsize, design_name, process_instance_id, num_bbs, authorize_priv, None, True
+        ))
+        futures.append(new_future)
+        process_instance_id += 1
+
+        time.sleep(1)  # Избегаем перегрузки
+
+    print("[INFO] Все задачи завершены.")
+
 
