@@ -290,7 +290,6 @@ def calibrate_spikespeed(numinstrs:int = 10000) -> list:
     result = subprocess.run(spike_shell_command, capture_output=True)
     ns_elapsed = time_ns() - ns_before
     print(f"[DEBUG] Spike execution completed in {ns_elapsed} ns")
-    print(f"[DEBUG] Spike output: {result.stdout.decode(errors='ignore')}")
 
     if not NO_REMOVE_TMPFILES:
         os.remove(path_to_debug_file)
@@ -302,3 +301,4 @@ def calibrate_spikespeed(numinstrs:int = 10000) -> list:
     __spike_ns_per_instr = ns_elapsed / numinstrs
     print(f"[DEBUG] Calibrated Spike time per instruction: {__spike_ns_per_instr} ns")
 
+    return ray.put(__spike_ns_per_instr)
