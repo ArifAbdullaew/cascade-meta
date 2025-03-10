@@ -32,22 +32,31 @@ def gen_fuzzerstate_elf_expectedvals(memsize: int, design_name: str, randseed: i
     from cascade.fuzzerstate import FuzzerState
     if DO_ASSERT:
         assert nmax_bbs is None or nmax_bbs > 0
-
+    
+    print(f"[DEBUG] Starting gen_fuzzerstate_elf_expectedvals with memsize={memsize}, design_name={design_name}, randseed={randseed}, nmax_bbs={nmax_bbs}, authorize_privileges={authorize_privileges}, check_pc_spike_again={check_pc_spike_again}, max_num_instructions={max_num_instructions}, no_dependency_bias={no_dependency_bias}")
+    
     start = time.time()
     random.seed(randseed)
+    
     fuzzerstate = FuzzerState(get_design_boot_addr(design_name), design_name, memsize, randseed, nmax_bbs, authorize_privileges, max_num_instructions, no_dependency_bias)
+    print(f"[DEBUG] FuzzerState initialized: {fuzzerstate}")
+    
     gen_basicblocks(fuzzerstate)
     time_seconds_spent_in_gen_bbs = time.time() - start
-
+    print(f"[DEBUG] gen_basicblocks completed in {time_seconds_spent_in_gen_bbs:.6f} seconds")
+    
     # spike resolution
     start = time.time()
     expected_regvals = spike_resolution(fuzzerstate, check_pc_spike_again)
     time_seconds_spent_in_spike_resol = time.time() - start
-
+    print(f"[DEBUG] spike_resolution completed in {time_seconds_spent_in_spike_resol:.6f} seconds, expected_regvals: {expected_regvals}")
+    
     start = time.time()
     # This is typically quite short
     rtl_elfpath = gen_elf_from_bbs(fuzzerstate, False, 'rtl', fuzzerstate.instance_to_str(), fuzzerstate.design_base_addr)
     time_seconds_spent_in_gen_elf = time.time() - start
+    print(f"[DEBUG] gen_elf_from_bbs completed in {time_seconds_spent_in_gen_elf:.6f} seconds, rtl_elfpath: {rtl_elfpath}")
+    
     return fuzzerstate, rtl_elfpath, expected_regvals, time_seconds_spent_in_gen_bbs, time_seconds_spent_in_spike_resol, time_seconds_spent_in_gen_elf
 
 ###

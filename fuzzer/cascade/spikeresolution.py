@@ -234,44 +234,60 @@ def _check_pc_trace_from_spike(fuzzerstate, spike_pc_seq):
 # @return a list of fuzzerstate.num_pickable_regs
 # 1 (does not contain the zero register)
 def spike_resolution(fuzzerstate, check_pc_spike_again: bool = False):
+    print(f"[DEBUG] Starting spike_resolution for design_name={fuzzerstate.design_name}")
     design_name = fuzzerstate.design_name
     _transmit_addrs_to_producers_for_spike_resolution(fuzzerstate)
-    # print('start addrs', list(map(hex, fuzzerstate.bb_start_addr_seq)))
+    
     spike_resolution_elfpath = gen_elf_from_bbs(fuzzerstate, True, 'spikeresol', fuzzerstate.instance_to_str(), SPIKE_STARTADDR)
-    # print('Spike resolution elfpath:', spike_resolution_elfpath)
+    print(f"[DEBUG] Generated spike resolution ELF at {spike_resolution_elfpath}")
+    
     regdump_reqs = gen_regdump_reqs(fuzzerstate)
     flat_instr_objs = list(itertools.chain.from_iterable(fuzzerstate.instr_objs_seq))
-    # len(flat_instr_objs)+1: the +1 is to reach the final basic block and thereby overwrite the potential destination register of a jal/jalr
-    regvals, (finalintregvals_spikeresol, finalfpuregvals_spikeresol) = run_trace_regs_at_pc_locs(fuzzerstate.instance_to_str(), spike_resolution_elfpath, get_design_march_flags_nocompressed(design_name), SPIKE_STARTADDR, regdump_reqs, True, fuzzerstate.final_bb_base_addr+SPIKE_STARTADDR, fuzzerstate.num_pickable_floating_regs if fuzzerstate.design_has_fpu else 0, fuzzerstate.design_has_fpud)
+    
+    regvals, (finalintregvals_spikeresol, finalfpuregvals_spikeresol) = run_trace_regs_at_pc_locs(
+        fuzzerstate.instance_to_str(), spike_resolution_elfpath, get_design_march_flags_nocompressed(design_name),
+        SPIKE_STARTADDR, regdump_reqs, True, fuzzerstate.final_bb_base_addr+SPIKE_STARTADDR,
+        fuzzerstate.num_pickable_floating_regs if fuzzerstate.design_has_fpu else 0, fuzzerstate.design_has_fpud
+    )
+    
+    print(f"[DEBUG] Completed run_trace_regs_at_pc_locs")
+    
     if not NO_REMOVE_TMPFILES:
         os.remove(spike_resolution_elfpath)
-        del spike_resolution_elfpath
-
-    # IMPORTANT: We reset the randomness here to have deterministic branch instructions.
-    # (Rare) example where it matters: assume we need to pop the last bb, say with id 20. Then we could have a bug with request size 19 but not with request size 20, or vice versa.
-    random.seed(fuzzerstate.randseed) # We could as well seed with zero here.
+        print(f"[DEBUG] Removed temporary file: {spike_resolution_elfpath}")
+    
+    random.seed(fuzzerstate.randseed)
     _feed_regdump_to_instrs(fuzzerstate, regvals)
-
-    # Use spike to check the rtl elf if requested
+    
     if check_pc_spike_again:
-        # Generate the RTL ELF, but located for spike at SPIKE_STARTADDR
+        print(f"[DEBUG] Performing additional spike check")
         rtl_spike_elfpath = gen_elf_from_bbs(fuzzerstate, False, 'spikedoublecheck', fuzzerstate.instance_to_str(), SPIKE_STARTADDR)
         if NO_REMOVE_TMPFILES:
-            print('rtl_spike_elfpath:', rtl_spike_elfpath)
-        rtl_spike_pc_seq, (finalintregvals_spikecheck, finalfpuregvals_spikecheck) = run_trace_all_pcs(fuzzerstate.instance_to_str(), rtl_spike_elfpath, get_design_march_flags_nocompressed(design_name), len(flat_instr_objs)+1, SPIKE_STARTADDR, True,  fuzzerstate.num_pickable_floating_regs if fuzzerstate.design_has_fpu else 0, fuzzerstate.design_has_fpud, fuzzerstate)
+            print(f"[DEBUG] RTL Spike ELF Path: {rtl_spike_elfpath}")
+        
+        rtl_spike_pc_seq, (finalintregvals_spikecheck, finalfpuregvals_spikecheck) = run_trace_all_pcs(
+            fuzzerstate.instance_to_str(), rtl_spike_elfpath, get_design_march_flags_nocompressed(design_name),
+            len(flat_instr_objs) + 1, SPIKE_STARTADDR, True,
+            fuzzerstate.num_pickable_floating_regs if fuzzerstate.design_has_fpu else 0, fuzzerstate.design_has_fpud, fuzzerstate
+        )
+        
         if not NO_REMOVE_TMPFILES:
             os.remove(rtl_spike_elfpath)
-            del rtl_spike_elfpath
-
-        # Check PC sequence
+            print(f"[DEBUG] Removed temporary file: {rtl_spike_elfpath}")
+        
         _check_pc_trace_from_spike(fuzzerstate, rtl_spike_pc_seq)
-        # Check register matching
+        
         for reg_id in range(1, fuzzerstate.num_pickable_regs):
-            # The transient registers are not expected to match.
             if fuzzerstate.intregpickstate.get_regstate(reg_id) in (IntRegIndivState.FREE, IntRegIndivState.CONSUMED):
-                assert finalintregvals_spikeresol[reg_id] == finalintregvals_spikecheck[reg_id], f"Mismatch in x{reg_id} value. Resolution: `{hex(finalintregvals_spikeresol[reg_id])}`, check: `{hex(finalintregvals_spikecheck[reg_id])}`. Reg state: `{fuzzerstate.intregpickstate.get_regstate(reg_id)}`."
+                assert finalintregvals_spikeresol[reg_id] == finalintregvals_spikecheck[reg_id], \
+                    f"[ERROR] Mismatch in x{reg_id} value. Resolution: {hex(finalintregvals_spikeresol[reg_id])}, " \
+                    f"check: {hex(finalintregvals_spikecheck[reg_id])}."
+        
         if fuzzerstate.design_has_fpu:
             for reg_id in range(fuzzerstate.num_pickable_floating_regs):
-                assert finalfpuregvals_spikeresol[reg_id] == finalfpuregvals_spikecheck[reg_id], f"Mismatch in f{reg_id} value. Resolution: `{hex(finalfpuregvals_spikeresol[reg_id])}`, check: `{hex(finalintregvals_spikecheck[reg_id])}`."
-
+                assert finalfpuregvals_spikeresol[reg_id] == finalfpuregvals_spikecheck[reg_id], \
+                    f"[ERROR] Mismatch in f{reg_id} value. Resolution: {hex(finalfpuregvals_spikeresol[reg_id])}, " \
+                    f"check: {hex(finalfpuregvals_spikecheck[reg_id])}."
+    
+    print(f"[DEBUG] Spike resolution completed")
     return finalintregvals_spikeresol[1:], finalfpuregvals_spikeresol
