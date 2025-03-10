@@ -35,7 +35,10 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
     calibrate_spikespeed()
     profile_get_medeleg_mask(design_name)
     print(f"Starting parallel testing of `{design_name}` on {num_workers} workers.")
-
+    
+    ray.get([calibrate_spikespeed.remote() for _ in range(num_workers)])
+    ray.get([profile_get_medeleg_mask.remote(design_name) for _ in range(num_workers)])
+    
     # Инициализация Ray (если не была выполнена ранее)
     if not ray.is_initialized():
         try:
