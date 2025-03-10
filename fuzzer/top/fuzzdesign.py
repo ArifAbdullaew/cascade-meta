@@ -42,7 +42,7 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
     futures = []
     for _ in range(num_workers):
         memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(design_name, process_instance_id, can_authorize_privileges)
-        futures.append(fuzz_single_from_descriptor.remote(
+        futures.append(fuzz_single_from_descriptor(
             memsize, design_name, process_instance_id, num_bbs, authorize_priv, None, True
         ))
         process_instance_id += 1
@@ -55,7 +55,7 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
         except Exception:
             pass
         memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(design_name, process_instance_id, can_authorize_privileges)
-        new_future = fuzz_single_from_descriptor.remote(
+        new_future = fuzz_single_from_descriptor(
             memsize, design_name, process_instance_id, num_bbs, authorize_priv, None, True
         )
         process_instance_id += 1

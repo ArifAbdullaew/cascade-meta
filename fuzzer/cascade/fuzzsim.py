@@ -315,7 +315,7 @@ def runtest_modelsim(fuzzerstate, elfpath: str, coveragepath: str):
 def runtest_verilator_forprofiling(fuzzerstate, elfpath: str, expected_fuzzerstate_len_fordebug: int):
     if DO_ASSERT:
         assert len(fuzzerstate.instr_objs_seq) == expected_fuzzerstate_len_fordebug, f"Unexpected length of fuzzerstate: {len(fuzzerstate.instr_objs_seq)}"
-    is_stop_successful, received_regvals = runsim_verilator(fuzzerstate.design_name, len(fuzzerstate.instr_objs_seq[0])*MAX_CYCLES_PER_INSTR + SETUP_CYCLES, elfpath, 1, 0)
+    is_stop_successful, received_regvals = ray.get(runsim_verilator(fuzzerstate.design_name, len(fuzzerstate.instr_objs_seq[0])*MAX_CYCLES_PER_INSTR + SETUP_CYCLES, elfpath, 1, 0))
     # Check successful stop
     if not is_stop_successful:
         raise Exception(f"Timeout during profiling of design `{fuzzerstate.design_name}`.")
