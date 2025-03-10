@@ -31,20 +31,16 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
     num_workers = num_cores
     assert num_workers > 0
 
-    # Предварительная настройка (калибровка Spike, профилирование дизайна)
-    calibrate_spikespeed()
-    profile_get_medeleg_mask(design_name)
-    print(f"Starting parallel testing of `{design_name}` on {num_workers} workers.")
-    
-    ray.get([calibrate_spikespeed.remote() for _ in range(num_workers)])
-    ray.get([profile_get_medeleg_mask.remote(design_name) for _ in range(num_workers)])
-    
-    # Инициализация Ray (если не была выполнена ранее)
     if not ray.is_initialized():
         try:
             ray.init(address="auto")
         except Exception:
             ray.init()
+
+    # Предварительная настройка (калибровка Spike, профилирование дизайна)
+    ray.get(calibrate_spikespeed.remote())
+    ray.get(profile_get_medeleg_mask.remote(design_name))
+    print(f"Starting parallel testing of `{design_name}` on {num_workers} workers.")
 
     # Запуск начальных задач фаззинга на num_workers параллельных рабочих Ray
     process_instance_id = seed_offset
