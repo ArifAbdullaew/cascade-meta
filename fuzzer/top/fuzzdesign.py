@@ -61,15 +61,13 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
 
         for finished_ref in done:
             try:
-                result = ray.get(finished_ref)  # Получаем результат
+                result = ray.get(finished_ref)  
                 print(f"[INFO] Завершена задача: {result}")  
             except Exception as e:
                 print(f"[ERROR] Ошибка в `fuzz_single_from_descriptor`: {e}")
 
-        # **Обновляем список активных задач**
         futures = remaining
 
-        # **Запускаем новую задачу**
         memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(
             design_name, process_instance_id, can_authorize_privileges
         )
@@ -79,8 +77,6 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
         futures.append(new_future)
         process_instance_id += 1
 
-        time.sleep(1)  # Избегаем перегрузки
-
-    print("[INFO] Все задачи завершены.")
+        time.sleep(1)  
 
 

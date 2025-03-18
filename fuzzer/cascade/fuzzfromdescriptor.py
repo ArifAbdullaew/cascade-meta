@@ -97,18 +97,15 @@ def fuzz_single_from_descriptor(memsize: int, design_name: str, randseed: int,
     try:
         gathered_times = run_rtl(memsize, design_name, randseed, nmax_bbs, authorize_privileges, check_pc_spike_again)
         if loggers is not None:
-            # Логирование успешного прогона (если используется логгер)
             idx = random.randrange(len(loggers))
             loggers[idx].log(True, {
                 'memsize': memsize, 'design_name': design_name, 'randseed': randseed, 
                 'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges
             }, False, '')
         else:
-            # Возвращаем собранные времена выполнения фаззера (если нет логгера)
             return gathered_times
     except Exception as e:
         if loggers is not None:
-            # Логирование неуспешного прогона (исключение) через логгер
             emsg = str(e)
             idx = random.randrange(len(loggers))
             if 'Spike timeout' in emsg:
@@ -122,9 +119,7 @@ def fuzz_single_from_descriptor(memsize: int, design_name: str, randseed: int,
                     'nmax_bbs': nmax_bbs, 'authorize_privileges': authorize_privileges
                 }, False, emsg)
         else:
-            # Выводим сообщение об ошибке, если логгер не используется
             print(f"Failed test_run_rtl_single for params memsize:`{memsize}`, "
                   f"design:`{design_name}`, spike_check:`{check_pc_spike_again}`, "
                   f"randseed:`{randseed}`, nmax_bbs:`{nmax_bbs}`, priv:`{authorize_privileges}`\n{e}")
-        # Возвращаем специальное значение, обозначающее сбой (0,0,0,0)
         return 0, 0, 0, 0

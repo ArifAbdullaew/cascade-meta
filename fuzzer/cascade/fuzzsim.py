@@ -75,7 +75,6 @@ def runsim_verilator(design_name, simlen, elfpath, num_int_regs, num_float_regs,
     sim_executable_path  = os.path.abspath(os.path.join(builddir, simdir, verilatordir, verilator_executable))
     print(f"[DEBUG] sim_executable_path: {sim_executable_path}")
 
-    # Запускаем Verilator с указанными потоками
     result = subprocess.run(
         [sim_executable_path,"--threads-dpi", "1"],
         check=True,
@@ -86,7 +85,6 @@ def runsim_verilator(design_name, simlen, elfpath, num_int_regs, num_float_regs,
     
     outlines = list(filter(lambda l: 'Writing ELF word to' not in l, result.stdout.split('\n')))
 
-    # Проверяем успешность остановки
     is_stop_successful = 'Found a stop request.' in result.stdout
     if not is_stop_successful:
         return False, None
