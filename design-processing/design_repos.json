@@ -15,5 +15,6 @@
     "vexriscv-v8-9-v15": "/cascade-vexriscv-v8-9-v15/cascade",
     "vexriscv-v10-11": "/cascade-vexriscv-v10-11/cascade",
     "vexriscv-v12": "/cascade-vexriscv-v12/cascade",
-    "vexriscv-v13": "/cascade-vexriscv-v13/cascade"
+    "vexriscv-v13": "/cascade-vexriscv-v13/cascade",
+    "biriscv": "/cascade-biriscv/cascade"
 }
