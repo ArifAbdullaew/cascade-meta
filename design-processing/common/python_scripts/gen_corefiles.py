@@ -16,15 +16,18 @@ if __name__ == "__main__":
     with open(src_filename, "r") as f:
         content = f.read()
 
-    # Find the occurrences of a dollar sign and alpha-numeric characters
-    pattern = r'\$([A-Za-z_]+[A-Za-z0-9_]*)'
-    matches = re.findall(pattern, content)
-
-    # Replace occurrences with the actual value
+    # Replace $VARNAME with environment values
+    pattern_dollar = r'\$([A-Za-z_]+[A-Za-z0-9_]*)'
+    matches = re.findall(pattern_dollar, content)
     for match in matches:
-        env_var_name = match
-        env_var_value = os.environ.get(env_var_name, '')
-        content = content.replace('$' + env_var_name, env_var_value)
+        env_var_value = os.environ.get(match, '')
+        content = content.replace('$' + match, env_var_value)
+
+    # Extract design_name from folder name
+    design_name = os.path.basename(os.path.abspath(os.path.dirname(tgt_filename)))
+
+    # Replace {{design_name}} with actual design name
+    content = re.sub(r'\{\{\s*design_name\s*\}\}', design_name, content)
 
     with open(tgt_filename, "w") as f:
         f.write(content)
