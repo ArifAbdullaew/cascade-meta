@@ -14,7 +14,6 @@ import itertools
 import os
 import subprocess
 import sys
-import ray
 from enum import Enum
 
 
@@ -27,7 +26,6 @@ class SimulatorEnum(Enum):
 MAX_CYCLES_PER_INSTR = 30
 SETUP_CYCLES = 1000 # Without this, we had issues with BOOM with very short programs (typically <20 instructions) not being able to finish in time.
 
-@ray.remote
 def run_verilator_task(sim_executable_path, my_env, num_threads):
     try:
         print(f"[DEBUG] Running Verilator with {num_threads} threads on {sim_executable_path}")
@@ -54,7 +52,6 @@ def run_verilator_task(sim_executable_path, my_env, num_threads):
 
 # @param get_rfuzz_coverage_mask if True, then return a pair (is_stop_successful: bool, rfuzz_coverage_mask: int)
 # Return a pair (is_stop_successful: bool, reg_vals: int list of length <= MAX_NUM_PICKABLE_REGS-1 or None if is_stop_successful is False)
-@ray.remote
 def runsim_verilator(design_name, simlen, elfpath, num_int_regs, num_float_regs, coveragepath=None, get_rfuzz_coverage_mask=False):
     print(f"[DEBUG] Running Verilator simulation for design: {design_name}, simlen: {simlen}, elfpath: {elfpath}")
     print(f"[DEBUG] num_int_regs: {num_int_regs}, num_float_regs: {num_float_regs}, coveragepath: {coveragepath}, get_rfuzz_coverage_mask: {get_rfuzz_coverage_mask}")
@@ -217,7 +214,7 @@ def runtest_simulator(fuzzerstate, elfpath: str, expected_regvals: tuple, overri
             assert len(expected_floatregvals) == fuzzerstate.num_pickable_floating_regs
     num_instrs = override_num_instrs if override_num_instrs is not None else len(list(itertools.chain.from_iterable(fuzzerstate.instr_objs_seq)))
     if simulator == SimulatorEnum.VERILATOR:
-        is_stop_successful, received_regvals = ray.get(runsim_verilator.remote(fuzzerstate.design_name, num_instrs*MAX_CYCLES_PER_INSTR + SETUP_CYCLES, elfpath, fuzzerstate.num_pickable_regs-1, fuzzerstate.num_pickable_floating_regs))
+        is_stop_successful, received_regvals = runsim_verilator.remote(fuzzerstate.design_name, num_instrs*MAX_CYCLES_PER_INSTR + SETUP_CYCLES, elfpath, fuzzerstate.num_pickable_regs-1, fuzzerstate.num_pickable_floating_regs)
     elif simulator == SimulatorEnum.MODELSIM:
         is_stop_successful, received_regvals = runsim_modelsim(fuzzerstate.design_name, num_instrs*MAX_CYCLES_PER_INSTR + SETUP_CYCLES, elfpath, fuzzerstate.num_pickable_regs-1, fuzzerstate.num_pickable_floating_regs)
     else:
