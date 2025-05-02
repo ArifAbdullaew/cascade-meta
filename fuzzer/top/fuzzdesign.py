@@ -17,6 +17,10 @@ newly_finished_tests = 0
 curr_round_id = 0
 all_times_to_detection = []
 
+@ray.remote
+def run_single_task(memsize, design_name, randseed, num_bbs, authorize_privileges):
+    return fuzz_single_from_descriptor(memsize, design_name, randseed, num_bbs, authorize_privileges, None, True)
+
 def test_done_callback(arg):
     global newly_finished_tests
     global callback_lock
@@ -51,9 +55,9 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
         memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(
             design_name, process_instance_id, can_authorize_privileges
         )
-        future = ray.put(fuzz_single_from_descriptor(
-            memsize, design_name, process_instance_id, num_bbs, authorize_priv, None, True
-        ))
+        future = run_single_task.remote(
+            memsize, design_name, process_instance_id, num_bbs, authorize_priv
+        )
         futures.append(future)
         process_instance_id += 1
         iterations_done += 1
@@ -76,9 +80,9 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
         memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(
             design_name, process_instance_id, can_authorize_privileges
         )
-        new_future = ray.put(fuzz_single_from_descriptor(
-            memsize, design_name, process_instance_id, num_bbs, authorize_priv, None, True
-        ))
+        new_future = run_single_task.remote(
+            memsize, design_name, process_instance_id, num_bbs, authorize_priv
+        )
         futures.append(new_future)
         process_instance_id += 1
         iterations_done += 1
