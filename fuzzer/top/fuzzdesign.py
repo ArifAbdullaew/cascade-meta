@@ -34,7 +34,7 @@ from common.spike import calibrate_spikespeed
 from common.profiledesign import profile_get_medeleg_mask
 from cascade.fuzzfromdescriptor import gen_new_test_instance, fuzz_single_from_descriptor
 
-def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize_privileges: bool):
+def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize_privileges: bool, num_iterations: int = None):
     num_workers = num_cores
     assert num_workers > 0
 
@@ -45,8 +45,9 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
 
     process_instance_id = seed_offset
     futures = []
+    iterations_done = 0
 
-    for _ in range(num_workers):
+    for _ in range(num_workers):    
         memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(
             design_name, process_instance_id, can_authorize_privileges
         )
@@ -55,6 +56,7 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
         ))
         futures.append(future)
         process_instance_id += 1
+        iterations_done += 1
 
     while futures:
         done, remaining = ray.wait(futures, num_returns=1, timeout=10)  
@@ -62,11 +64,14 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
         for finished_ref in done:
             try:
                 result = ray.get(finished_ref)  
-                print(f"[INFO] Завершена задача: {result}")  
+                print(f"[INFO] Task done: {result}")
             except Exception as e:
-                print(f"[ERROR] Ошибка в `fuzz_single_from_descriptor`: {e}")
+                print(f"[ERROR] Error in `fuzz_single_from_descriptor`: {e}")
 
         futures = remaining
+
+        if num_iterations is not None and iterations_done >= num_iterations:
+            break
 
         memsize, _, _, num_bbs, authorize_priv = gen_new_test_instance(
             design_name, process_instance_id, can_authorize_privileges
@@ -76,7 +81,8 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
         ))
         futures.append(new_future)
         process_instance_id += 1
+        iterations_done += 1
 
-        time.sleep(1)  
+        time.sleep(0.1)  
 
 
