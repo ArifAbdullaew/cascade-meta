@@ -11,6 +11,7 @@
 # sys.argv[5]: tolerate some bug (by default 0)
 
 from top.fuzzdesign import fuzzdesign
+from top.fuzzdesign import run_single_task
 from cascade.toleratebugs import tolerate_bug_for_eval_reduction
 from common.designcfgs import get_design_cascade_path
 

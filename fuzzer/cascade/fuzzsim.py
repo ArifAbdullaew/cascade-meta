@@ -214,7 +214,7 @@ def runtest_simulator(fuzzerstate, elfpath: str, expected_regvals: tuple, overri
             assert len(expected_floatregvals) == fuzzerstate.num_pickable_floating_regs
     num_instrs = override_num_instrs if override_num_instrs is not None else len(list(itertools.chain.from_iterable(fuzzerstate.instr_objs_seq)))
     if simulator == SimulatorEnum.VERILATOR:
-        is_stop_successful, received_regvals = runsim_verilator.remote(fuzzerstate.design_name, num_instrs*MAX_CYCLES_PER_INSTR + SETUP_CYCLES, elfpath, fuzzerstate.num_pickable_regs-1, fuzzerstate.num_pickable_floating_regs)
+        is_stop_successful, received_regvals = runsim_verilator(fuzzerstate.design_name, num_instrs*MAX_CYCLES_PER_INSTR + SETUP_CYCLES, elfpath, fuzzerstate.num_pickable_regs-1, fuzzerstate.num_pickable_floating_regs)
     elif simulator == SimulatorEnum.MODELSIM:
         is_stop_successful, received_regvals = runsim_modelsim(fuzzerstate.design_name, num_instrs*MAX_CYCLES_PER_INSTR + SETUP_CYCLES, elfpath, fuzzerstate.num_pickable_regs-1, fuzzerstate.num_pickable_floating_regs)
     else:
