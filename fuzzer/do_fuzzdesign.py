@@ -35,11 +35,16 @@ if __name__ == '__main__':
         tolerate_some_bug = int(sys.argv[5])
     else:
         tolerate_some_bug = 0
+    
+    if len(sys.argv) > 6:
+        max_iterations = int(sys.argv[6])
+    else:
+        None
 
     if tolerate_some_bug:
         tolerate_bug_for_eval_reduction(sys.argv[1])
 
-    fuzzdesign(sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), authorize_privileges)
+    fuzzdesign(sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), authorize_privileges, max_iterations)
 
 else:
     raise Exception("This module must be at the toplevel.")

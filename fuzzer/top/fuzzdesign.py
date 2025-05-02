@@ -24,7 +24,7 @@ def test_done_callback(arg):
     with callback_lock:
         newly_finished_tests += 1
 
-def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize_privileges: bool):
+def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize_privileges: bool, max_iterations: int = None):
     global newly_finished_tests
     global callback_lock
     global all_times_to_detection
@@ -42,6 +42,8 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
 
     print("[DEBUG] Initializing fuzzing process")
     print(f"[DEBUG] Design Name: {design_name}, Cores: {num_cores}, Seed Offset: {seed_offset}, Privileges: {can_authorize_privileges}")
+    if max_iterations is not None:
+        print(f"[DEBUG] Max iterations: {max_iterations}")
 
     calibrate_spikespeed()
     profile_get_medeleg_mask(design_name)
@@ -50,15 +52,17 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
     newly_finished_tests = 0
     pool = mp.Pool(processes=num_workers)
     process_instance_id = seed_offset
-    
+    total_executed = 0
+
     print("[DEBUG] Spawning initial worker processes")
-    for _ in range(num_workers):
+    for _ in range(min(num_workers, max_iterations) if max_iterations is not None else num_workers):
         memsize, _, _, num_bbs, authorize_privileges = gen_new_test_instance(design_name, process_instance_id, can_authorize_privileges)
         print(f"[DEBUG] Spawning test instance: ID={process_instance_id}, MemSize={memsize}, Num_BBs={num_bbs}, Privileges={authorize_privileges}")
         pool.apply_async(fuzz_single_from_descriptor, args=(memsize, design_name, process_instance_id, num_bbs, authorize_privileges, None, True), callback=test_done_callback)
         process_instance_id += 1
+        total_executed += 1
 
-    while True:
+    while max_iterations is None or total_executed < max_iterations:
         time.sleep(2)
         print("[DEBUG] Checking for newly finished tests...")
         
@@ -66,10 +70,14 @@ def fuzzdesign(design_name: str, num_cores: int, seed_offset: int, can_authorize
             if newly_finished_tests > 0:
                 print(f"[DEBUG] {newly_finished_tests} new test(s) finished, spawning new instances...")
                 for _ in range(newly_finished_tests):
+                    if max_iterations is not None and total_executed >= max_iterations:
+                        print("[DEBUG] Reached max iterations.")
+                        break
                     memsize, _, _, num_bbs, authorize_privileges = gen_new_test_instance(design_name, process_instance_id, can_authorize_privileges)
                     print(f"[DEBUG] Spawning test instance: ID={process_instance_id}, MemSize={memsize}, Num_BBs={num_bbs}, Privileges={authorize_privileges}")
                     pool.apply_async(fuzz_single_from_descriptor, args=(memsize, design_name, process_instance_id, num_bbs, authorize_privileges, None, True), callback=test_done_callback)
                     process_instance_id += 1
+                    total_executed += 1
                 newly_finished_tests = 0
 
     # This code should never be reached.
